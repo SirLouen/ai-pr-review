@@ -1,0 +1,86 @@
+name: AI PR Review (DeepSeek)
+description: >-
+  Reviews a pull request with PR-Agent on DeepSeek, refutes each finding against the full
+  diff, and keeps the surviving findings in a single PR comment that is updated in place.
+branding:
+  icon: search
+  color: blue
+
+inputs:
+  pr-number:
+    description: Pull request number to review.
+    required: true
+  publish:
+    description: '"true" to post the review on the PR, anything else for a dry run.'
+    required: false
+    default: "true"
+  deepseek-api-key:
+    description: DeepSeek API key.
+    required: true
+  github-token:
+    description: >-
+      Token used to read the PR and post the review. Use the workflow's own
+      `github.token`, which is scoped to one repository and expires with the job. Do not pass a
+      classic personal access token: it reaches every repository its account can access.
+    required: true
+  model:
+    description: DeepSeek model name.
+    required: false
+    default: deepseek-flash
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.12"
+
+    # Every package, including transitive dependencies, is pinned with hashes in
+    # requirements.lock (generated for Python 3.12 on x86_64 Linux). --no-deps ensures nothing
+    # outside the lock is installed. No secrets are present in this step's environment.
+    - name: Install PR-Agent (hash-locked)
+      shell: bash
+      run: >-
+        python -m pip install --quiet --disable-pip-version-check
+        --require-hashes --no-deps
+        -r "${GITHUB_ACTION_PATH}/requirements.lock"
+
+    # Inputs reach the shell only through env, never interpolated into the script body.
+    - name: Review and verify
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr-number }}
+        PUBLISH: ${{ inputs.publish }}
+        REPOSITORY: ${{ github.repository }}
+
+        DEEPSEEK_API_KEY: ${{ inputs.deepseek-api-key }}
+        GITHUB_TOKEN_REVIEW: ${{ inputs.github-token }}
+        REVIEW_MODEL: ${{ inputs.model }}
+
+        # PR-Agent configuration
+        DEEPSEEK__KEY: ${{ inputs.deepseek-api-key }}
+        GITHUB__USER_TOKEN: ${{ inputs.github-token }}
+        GITHUB__DEPLOYMENT_TYPE: user
+        CONFIG__MODEL: deepseek/${{ inputs.model }}
+        CONFIG__FALLBACK_MODELS: "[]"
+        CONFIG__CUSTOM_MODEL_MAX_TOKENS: "128000"
+        CONFIG__DUPLICATE_EXAMPLES: "false"
+        CONFIG__TEMPERATURE: "0"
+        CONFIG__AI_TIMEOUT: "300"
+        PR_REVIEWER__REQUIRE_SCORE_REVIEW: "false"
+        PR_REVIEWER__REQUIRE_TESTS_REVIEW: "true"
+        PR_REVIEWER__REQUIRE_ESTIMATE_EFFORT_TO_REVIEW: "false"
+        PR_REVIEWER__REQUIRE_CAN_BE_SPLIT_REVIEW: "false"
+        PR_REVIEWER__REQUIRE_SECURITY_REVIEW: "true"
+        PR_REVIEWER__NUM_MAX_FINDINGS: "5"
+        PR_AGENT_TIMEOUT_SECONDS: "900"
+      run: |
+        if [[ ! "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+          echo "::error::invalid pr-number: $PR_NUMBER"; exit 1
+        fi
+        if [[ ! "$REVIEW_MODEL" =~ ^[A-Za-z0-9._-]+$ ]]; then
+          echo "::error::invalid model: $REVIEW_MODEL"; exit 1
+        fi
+        args=(--pr-url "https://github.com/${REPOSITORY}/pull/${PR_NUMBER}")
+        if [[ "$PUBLISH" == "true" ]]; then args+=(--publish); fi
+        python "${GITHUB_ACTION_PATH}/verify_review.py" "${args[@]}"
