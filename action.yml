@@ -1,7 +1,7 @@
 name: AI PR Review (DeepSeek)
 description: >-
   Reviews a pull request with PR-Agent on DeepSeek, refutes each finding against the full
-  diff, and keeps the surviving findings in a single PR comment that is updated in place.
+  diff, and posts the surviving findings as a new PR comment, hiding earlier reviews as outdated.
 branding:
   icon: search
   color: blue

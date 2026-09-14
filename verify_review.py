@@ -5,8 +5,8 @@ PR-Agent has no verification step, so a confident-but-wrong finding is posted wi
 weight as a real bug. This script runs PR-Agent without publishing, extracts its findings,
 asks the model to refute each one against the full PR diff, and posts only what survives.
 
-The review is kept in a single PR comment that is updated in place on every run, so
-re-reviewing on each push does not pile up comments.
+Each run posts the review as a new PR comment and hides the earlier ones as outdated, so a
+re-review after a push is visible and notifies, while older reviews stay one click away.
 
 Usage:  python verify_review.py --pr-url <url> [--publish]
 
@@ -302,19 +302,57 @@ def reviewer_login():
         return ACTIONS_BOT
 
 
+def graphql(query, variables):
+    """POST a GraphQL request. GraphQL reports errors inside a 200 response, so raise on them."""
+    d = gh("/graphql", {"query": query, "variables": variables})
+    if d.get("errors"):
+        raise RuntimeError("; ".join(str(e.get("message", e)) for e in d["errors"]))
+    return d.get("data") or {}
+
+
+MINIMIZED_QUERY = """query($ids: [ID!]!) {
+  nodes(ids: $ids) { ... on IssueComment { id isMinimized } }
+}"""
+MINIMIZE_MUTATION = """mutation($id: ID!) {
+  minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { minimizedComment { isMinimized } }
+}"""
+
+
+def hide_outdated(comments):
+    """Minimize earlier reviews as outdated, skipping those already hidden by a previous run.
+
+    Never fatal: the new review is already posted, so a failure here only leaves an old one visible.
+    """
+    ids = [c["node_id"] for c in comments if c.get("node_id")]
+    pending = []
+    for start in range(0, len(ids), 100):        # the nodes query accepts at most 100 ids
+        chunk = ids[start:start + 100]
+        try:
+            nodes = graphql(MINIMIZED_QUERY, {"ids": chunk}).get("nodes") or []
+            pending += [n["id"] for n in nodes if n and n.get("id") and not n.get("isMinimized")]
+        except Exception as e:
+            log(f"warning: could not check which earlier reviews are hidden ({e})")
+            pending += chunk
+    for node_id in pending:
+        try:
+            graphql(MINIMIZE_MUTATION, {"id": node_id})
+            log(f"hid earlier review {node_id} as outdated")
+        except Exception as e:
+            log(f"warning: could not hide earlier review {node_id} ({e})")
+
+
 def publish(owner, repo, num, body):
-    """Update this reviewer's own existing comment if there is one, otherwise create it."""
+    """Post the review as a new comment, then hide this reviewer's earlier reviews as outdated.
+
+    A new comment lands below the commits it reviews and notifies the PR's subscribers; editing
+    one comment in place did neither, so reviews of later pushes went unnoticed.
+    """
     me = reviewer_login()
-    existing = None
-    for c in gh_paginated(f"/repos/{owner}/{repo}/issues/{num}/comments"):
-        if MARKER in (c.get("body") or "") and (c.get("user") or {}).get("login") == me:
-            existing = c
-    if existing:
-        gh(f"/repos/{owner}/{repo}/issues/comments/{existing['id']}", {"body": body}, method="PATCH")
-        log(f"updated existing review comment {existing['id']} (as {me})")
-    else:
-        c = gh(f"/repos/{owner}/{repo}/issues/{num}/comments", {"body": body})
-        log(f"posted review comment {c.get('id')} (as {me})")
+    earlier = [c for c in gh_paginated(f"/repos/{owner}/{repo}/issues/{num}/comments")
+               if MARKER in (c.get("body") or "") and (c.get("user") or {}).get("login") == me]
+    c = gh(f"/repos/{owner}/{repo}/issues/{num}/comments", {"body": body})
+    log(f"posted review comment {c.get('id')} (as {me})")
+    hide_outdated(earlier)
 
 
 def main():

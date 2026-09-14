@@ -5,8 +5,8 @@ A composite GitHub Action that reviews a pull request with
 pass that tries to refute each finding against the full diff. Only findings that survive are
 posted; refuted ones are listed in a collapsed section.
 
-The review lives in one PR comment that is updated on every run, so re-reviewing on each push
-does not add new comments.
+Each run posts the review as a new PR comment, below the commits it reviewed, and hides the
+earlier reviews as outdated. Only the latest review is expanded; older ones stay one click away.
 
 ## Usage
 
