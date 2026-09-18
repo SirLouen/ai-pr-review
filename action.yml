@@ -27,6 +27,14 @@ inputs:
     description: DeepSeek model name.
     required: false
     default: deepseek-flash
+  security-concerns:
+    description: >-
+      '"true" to keep PR-Agent's single free-text security_concerns field in this review.
+      It is a checklist question answered from the diff alone, with no file, line or
+      affected principal, so it produces low-signal items. Set it to "false" when the
+      skill-based security reviewer (security/analyze) runs on this repository.'
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -63,16 +71,28 @@ runs:
         GITHUB__DEPLOYMENT_TYPE: user
         CONFIG__MODEL: deepseek/${{ inputs.model }}
         CONFIG__FALLBACK_MODELS: "[]"
+        # Both are required. custom_model_max_tokens alone is silently clamped by
+        # config.max_model_tokens (default 32000) in utils.py: max_tokens_model =
+        # min(max_model_tokens, max_tokens_model). Without the second line the model
+        # sees a 32k budget and PR-Agent drops whole files to fit it.
         CONFIG__CUSTOM_MODEL_MAX_TOKENS: "128000"
+        CONFIG__MAX_MODEL_TOKENS: "128000"
         CONFIG__DUPLICATE_EXAMPLES: "false"
         CONFIG__TEMPERATURE: "0"
         CONFIG__AI_TIMEOUT: "300"
+        # Pinned here so a .pr_agent.toml on the default branch cannot enable chunking:
+        # each chunk logs its own "AI response:" and the parser reads only the last one,
+        # so the other chunks' findings would be lost without any error.
+        CONFIG__ENABLE_LARGE_PR_CHUNKING: "false"
         PR_REVIEWER__REQUIRE_SCORE_REVIEW: "false"
         PR_REVIEWER__REQUIRE_TESTS_REVIEW: "true"
         PR_REVIEWER__REQUIRE_ESTIMATE_EFFORT_TO_REVIEW: "false"
         PR_REVIEWER__REQUIRE_CAN_BE_SPLIT_REVIEW: "false"
-        PR_REVIEWER__REQUIRE_SECURITY_REVIEW: "true"
+        PR_REVIEWER__REQUIRE_SECURITY_REVIEW: ${{ inputs.security-concerns }}
         PR_REVIEWER__NUM_MAX_FINDINGS: "5"
+        # Linked issue bodies are attacker-controlled text pulled into the prompt
+        # (up to 3 issues, 10k chars each) and are not needed to review a diff.
+        PR_REVIEWER__REQUIRE_TICKET_ANALYSIS_REVIEW: "false"
         PR_AGENT_TIMEOUT_SECONDS: "900"
       run: |
         if [[ ! "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
@@ -80,6 +100,10 @@ runs:
         fi
         if [[ ! "$REVIEW_MODEL" =~ ^[A-Za-z0-9._-]+$ ]]; then
           echo "::error::invalid model: $REVIEW_MODEL"; exit 1
+        fi
+        # Reaches PR-Agent as a setting, not as shell: only a literal bool is allowed.
+        if [[ ! "$PR_REVIEWER__REQUIRE_SECURITY_REVIEW" =~ ^(true|false)$ ]]; then
+          echo "::error::security-concerns must be \"true\" or \"false\""; exit 1
         fi
         args=(--pr-url "https://github.com/${REPOSITORY}/pull/${PR_NUMBER}")
         if [[ "$PUBLISH" == "true" ]]; then args+=(--publish); fi

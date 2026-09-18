@@ -195,10 +195,30 @@ def extract_findings(out):
                              "content": str(f.get("issue_content", "")).strip(),
                              "start_line": f.get("start_line")})
     sec = review.get("security_concerns")
-    if sec and str(sec).strip().lower() not in ("no", "none", ""):
+    if sec and not _is_no(sec):
         findings.append({"file": "", "header": "Security concern",
                          "content": str(sec).strip(), "start_line": None})
     return raw, findings
+
+
+NO_RE = re.compile(r"^(no|none|n/?a)\b", re.I)
+
+
+def _is_no(value):
+    """True when security_concerns is a negative answer rather than a finding.
+
+    The prompt asks for "No" without explaining why, but models write "No." or
+    "No security concerns identified". Matching only the exact words posted those
+    as a finding with no file and no line.
+    """
+    text = str(value).strip().strip("*_`\"' ")
+    if not text:
+        return True
+    if NO_RE.match(text):
+        # "No" and "No security concerns found" are negatives; "No sanitization is
+        # applied to ..." is a finding that happens to start with the same word.
+        return len(text.split()) <= 6 or "concern" in text.lower()
+    return False
 
 
 def parse_verdict(raw):
