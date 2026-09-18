@@ -1,0 +1,119 @@
+name: AI security review (publish)
+description: >-
+  Downloads the bundle the analyze job produced, re-validates it with the vendored
+  validators, and posts the review comments, the summary and the check run. This job holds
+  the write token and NO model key: it calls no model and reads no repository source.
+branding:
+  icon: message-square
+  color: purple
+
+inputs:
+  pr-number:
+    description: Pull request number the bundle belongs to.
+    required: true
+  head-sha:
+    description: >-
+      Full 40-character sha the analyze job reviewed. The bundle is refused when it names
+      a different head, and nothing is posted when the pull request has moved on since.
+    required: true
+  github-token:
+    description: >-
+      Token used to post. Needs `pull-requests: write`, `issues: write` and
+      `checks: write`. Use the workflow's own `github.token`, never a personal access
+      token: a classic PAT reaches every repository its account can read.
+    required: true
+  fail-on:
+    description: >-
+      '"never" (default) or "any-lead". "never" keeps the check neutral. Nothing here is
+      confirmed and prompt injection can suppress findings, so this check must not be a
+      required one; "any-lead" exists for teams that accept that and want a red mark.'
+    required: false
+    default: never
+  artifact-name:
+    description: Name of the bundle artifact the analyze job uploaded.
+    required: false
+    default: ""
+  sarif:
+    description: '"true" uploads sarif.json to code scanning. Needs `security-events: write`.'
+    required: false
+    default: "false"
+
+outputs:
+  status:
+    description: '"published", "superseded" or "blocked".'
+    value: ${{ steps.publish.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.12"
+
+    - uses: actions/setup-node@<sha>  # PIN BEFORE USE: actions/setup-node v6.0.0
+      with:
+        node-version: "22"
+
+    - name: Resolve inputs
+      id: inputs
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr-number }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        SARIF: ${{ inputs.sarif }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+      run: |
+        set -euo pipefail
+        if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]{0,8}$ ]]; then
+          echo "::error::invalid pr-number"; exit 1
+        fi
+        if [[ ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::invalid head-sha: expected a full 40-character sha"; exit 1
+        fi
+        if [[ ! "$FAIL_ON" =~ ^(never|any-lead)$ ]]; then
+          echo "::error::fail-on must be never or any-lead"; exit 1
+        fi
+        if [[ ! "$SARIF" =~ ^(true|false)$ ]]; then
+          echo "::error::sarif must be true or false"; exit 1
+        fi
+        if [[ -n "$ARTIFACT_NAME" && ! "$ARTIFACT_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+          echo "::error::invalid artifact-name"; exit 1
+        fi
+        echo "artifact=${ARTIFACT_NAME:-ai-security-review-state-pr${PR_NUMBER}}" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/download-artifact@<sha>  # PIN BEFORE USE: actions/download-artifact v6.0.0
+      with:
+        name: ${{ steps.inputs.outputs.artifact }}
+        path: ${{ runner.temp }}/security-audit/bundle
+
+    # No model key in this environment. The bundle is untrusted input here: it was written
+    # by a job that read attacker-controlled source, so every validator runs again over it.
+    - name: Publish
+      id: publish
+      shell: bash
+      working-directory: ${{ github.action_path }}/../..
+      env:
+        SA_REPOSITORY: ${{ github.repository }}
+        SA_PR_NUMBER: ${{ inputs.pr-number }}
+        SA_HEAD_SHA: ${{ inputs.head-sha }}
+        SA_BUNDLE_DIR: ${{ runner.temp }}/security-audit/bundle
+        SA_FAIL_ON: ${{ inputs.fail-on }}
+        SA_GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        status=0
+        python -E -s -m prreview.security publish || status=$?
+        echo "status=${status}" >> "$GITHUB_OUTPUT"
+        if [[ "$status" -ne 0 ]]; then
+          echo "::warning::the bundle did not pass the publish-side gate"
+        fi
+        exit "$status"
+
+    - name: Upload SARIF
+      if: ${{ inputs.sarif == 'true' && hashFiles(format('{0}/security-audit/bundle/sarif.json', runner.temp)) != '' }}
+      uses: github/codeql-action/upload-sarif@<sha>  # PIN BEFORE USE: github/codeql-action v4
+      with:
+        sarif_file: ${{ runner.temp }}/security-audit/bundle/sarif.json
+        category: ai-security-review
+        checkout_path: ${{ github.workspace }}

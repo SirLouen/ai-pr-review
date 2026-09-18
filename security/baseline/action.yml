@@ -1,0 +1,140 @@
+name: AI security review (baseline)
+description: >-
+  Scheduled default-branch audit. Runs the same orchestrator over base..head on the default
+  branch at a standard profile and uploads the result as the `ai-security-review-baseline`
+  artifact, which pull-request runs consume through the skill's prior-run channel. It posts
+  nothing. Note: this audits a commit range, not the whole repository tree, and it does not
+  yet produce the architecture.md a pull-request run would consume for delta reconnaissance.
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  head-sha:
+    description: >-
+      Full 40-character sha of the default-branch commit to audit. Pass `github.sha`.
+    required: true
+  base-sha:
+    description: >-
+      Full 40-character sha the audit is taken against: the previous baseline's head, or
+      `github.event.before` on a push. The audit covers base..head.
+    required: true
+  github-token:
+    description: Read-only token. Use `github.token` under a job with `contents: read`.
+    required: true
+  deepseek-api-key:
+    description: DeepSeek API key.
+    required: false
+    default: ""
+  anthropic-api-key:
+    description: Anthropic API key. Optional.
+    required: false
+    default: ""
+  models:
+    description: Per-role model map, `role=model` comma separated.
+    required: false
+    default: ""
+  max-conversations:
+    description: >-
+      Conversation cap for the baseline. A default-branch sweep covers far more ground than
+      one pull request, so it carries its own cap rather than inheriting that one.
+    required: false
+    default: "28"
+  max-hunters:
+    description: Hunter cap for the baseline.
+    required: false
+    default: "12"
+  max-verifiers:
+    description: Verifier cap for the baseline.
+    required: false
+    default: "12"
+  max-usd:
+    description: >-
+      USD ceiling for one baseline run. Separate from the pull-request cap on purpose: a
+      weekly $6 audit and a per-push $1.50 review are different budgets.
+    required: false
+    default: "6.00"
+  artifact-retention-days:
+    description: How long the baseline artifact is kept.
+    required: false
+    default: "60"
+
+outputs:
+  run-status:
+    description: '"complete" or "incomplete".'
+    value: ${{ steps.baseline.outputs.run-status }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.12"
+
+    - uses: actions/setup-node@<sha>  # PIN BEFORE USE: actions/setup-node v6.0.0
+      with:
+        node-version: "22"
+
+    - name: Selftest
+      shell: bash
+      working-directory: ${{ github.action_path }}/../..
+      run: python -E -s -m prreview.security selftest
+
+    - name: Baseline audit
+      id: baseline
+      shell: bash
+      working-directory: ${{ github.action_path }}/../..
+      env:
+        SA_REPOSITORY: ${{ github.repository }}
+        # The baseline is not a pull request. A fixed sentinel keeps the run id and the
+        # artifact name distinct from any real pull request's state.
+        SA_PR_NUMBER: "1"
+        SA_HEAD_SHA: ${{ inputs.head-sha }}
+        SA_BASE_SHA: ${{ inputs.base-sha }}
+        SA_MODELS: ${{ inputs.models }}
+        SA_MAX_CONVERSATIONS: ${{ inputs.max-conversations }}
+        SA_MAX_HUNTERS: ${{ inputs.max-hunters }}
+        SA_MAX_VERIFIERS: ${{ inputs.max-verifiers }}
+        SA_MAX_USD: ${{ inputs.max-usd }}
+        SA_RECON_MODE: per-run
+        SA_DISCLOSURE: all
+        SA_WORKFLOW_REF: ${{ github.workflow_ref }}
+        SA_OUT_DIR: ${{ runner.temp }}/security-audit/baseline-${{ github.run_id }}-${{ github.run_attempt }}
+        SA_GITHUB_TOKEN: ${{ inputs.github-token }}
+        DEEPSEEK_API_KEY: ${{ inputs.deepseek-api-key }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+      run: |
+        set -euo pipefail
+        if [[ ! "$SA_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::invalid head-sha: expected a full 40-character sha"; exit 1
+        fi
+        if [[ ! "$SA_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::invalid base-sha: expected a full 40-character sha"; exit 1
+        fi
+        if [[ -n "$SA_MODELS" && ! "$SA_MODELS" =~ ^[A-Za-z0-9._@:=,-]+$ ]]; then
+          echo "::error::invalid models"; exit 1
+        fi
+        for name in SA_MAX_CONVERSATIONS SA_MAX_HUNTERS SA_MAX_VERIFIERS; do
+          if [[ ! "${!name}" =~ ^[0-9]+$ ]]; then echo "::error::invalid $name"; exit 1; fi
+        done
+        if [[ ! "$SA_MAX_USD" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          echo "::error::invalid max-usd"; exit 1
+        fi
+        if [[ -z "$DEEPSEEK_API_KEY" && -z "$ANTHROPIC_API_KEY" ]]; then
+          echo "::error::deepseek-api-key or anthropic-api-key is required"; exit 1
+        fi
+        status=0
+        python -E -s -m prreview.security baseline || status=$?
+        run_status=$(python -E -s -c 'import json,os; p=os.path.join(os.environ["SA_OUT_DIR"],"bundle","run-metadata.json"); print(json.load(open(p)).get("run_status","incomplete") if os.path.exists(p) else "incomplete")')
+        echo "run-status=${run_status}" >> "$GITHUB_OUTPUT"
+        if [[ "$status" -ne 0 ]]; then
+          echo "::warning::the baseline audit did not complete; the bundle records why"
+        fi
+
+    - uses: actions/upload-artifact@<sha>  # PIN BEFORE USE: actions/upload-artifact v5.0.0
+      if: always()
+      with:
+        name: ai-security-review-baseline
+        path: ${{ runner.temp }}/security-audit/baseline-${{ github.run_id }}-${{ github.run_attempt }}/bundle/
+        retention-days: ${{ inputs.artifact-retention-days }}
+        if-no-files-found: error

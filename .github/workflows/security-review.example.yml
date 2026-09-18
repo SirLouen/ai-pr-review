@@ -1,0 +1,128 @@
+# Consumer workflow for the AI security reviewer. Copy it into the repository you want
+# reviewed, as .github/workflows/security-review.yml, and pin every `<sha>` below.
+#
+# The shape matters more than the values:
+#
+#   * `pull_request_target` always runs the DEFAULT BRANCH's copy of this file, so a pull
+#     request cannot edit or disable the reviewer that reviews it. Nothing here checks out
+#     or executes pull-request code: the action fetches git objects into a bare repo with
+#     no worktree, and there is no `actions/cache` anywhere, because under this event the
+#     cache scope belongs to the default branch.
+#   * Fork pull requests are label-gated PER HEAD. `unlabel-on-push` strips the label on
+#     every `synchronize`, so each new fork head needs a maintainer's approval again. The
+#     gate is for cost and noise, not for secrets: the reviewer holds no capability a key
+#     could be exfiltrated through.
+#   * The work is split in two jobs. `analyze` holds the model key and has NO write scope.
+#     `publish` holds the write token and has NO model key. Neither can do the other's job.
+#
+# This check is advisory. Content inside a pull request can suppress findings, so a green
+# result is not a clean bill of health. Do not make it a required check.
+
+name: AI security review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+
+permissions: {}
+
+jobs:
+  # Every new fork head needs fresh approval: one label must not authorise every later push.
+  unlabel-on-push:
+    if: >-
+      github.event.action == 'synchronize' &&
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'security-review')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Drop the review label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh api -X DELETE "repos/${REPO}/issues/${PR}/labels/security-review" || true
+
+  analyze:
+    if: >-
+      github.event.pull_request.draft == false && (
+        (github.event.pull_request.head.repo.full_name == github.repository &&
+         github.event.action != 'labeled') ||
+        (github.event.action == 'labeled' && github.event.label.name == 'security-review'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    concurrency:
+      # On the job, not the workflow: at workflow level a run whose job is skipped (a
+      # `labeled` event for some other label) still cancels a review in progress.
+      group: ai-security-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: read
+    steps:
+      # Defence in depth against a bug in our own parsers, not against the model: the
+      # model can only cause I/O through tools, and no tool performs any.
+      #
+      # RUN THIS IN `egress-policy: audit` FIRST and read the run's network report before
+      # switching to `block`. The list below is what the review itself needs; artifact
+      # upload also talks to Azure blob storage endpoints whose hostnames vary by runner
+      # region and change over time, and a `block` policy without them fails the upload
+      # after the whole run has been paid for. `block` mode is free only on public repos.
+      #
+      # - uses: step-security/harden-runner@<sha>  # PIN BEFORE USE
+      #   with:
+      #     egress-policy: block
+      #     allowed-endpoints: >-
+      #       api.deepseek.com:443
+      #       api.anthropic.com:443
+      #       api.github.com:443
+      #       github.com:443
+      #       codeload.github.com:443
+      #       objects.githubusercontent.com:443
+      #       pipelines.actions.githubusercontent.com:443
+      #       results-receiver.actions.githubusercontent.com:443
+      #       # plus the *.blob.core.windows.net endpoints the audit run reports
+
+      - uses: SirLouen/ai-pr-review/security/analyze@<sha>  # PIN BEFORE USE
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          github-token: ${{ github.token }}
+          deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
+          # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}  # enables Claude verifiers
+          max-usd: "1.50"
+          disclosure: auto
+
+  publish:
+    needs: analyze
+    # `always()` so an incomplete analyze still gets its notice posted. A crashed run that
+    # posts nothing is indistinguishable from a clean one, which is the failure to avoid.
+    if: always() && needs.analyze.result != 'skipped' && needs.analyze.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: ai-security-review-publish-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      checks: write
+      actions: read
+      # security-events: write   # only with `sarif: "true"` below
+    steps:
+      - uses: SirLouen/ai-pr-review/security/publish@<sha>  # PIN BEFORE USE
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+          github-token: ${{ github.token }}
+          # "never" keeps the check neutral. Nothing this action reports is confirmed and
+          # prompt injection can suppress findings, so it must not gate a merge.
+          fail-on: never
+          sarif: "false"

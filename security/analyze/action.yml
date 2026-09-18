@@ -1,0 +1,169 @@
+name: AI security review (analyze)
+description: >-
+  Runs Cloudflare's security-audit skill over a pull request diff and uploads the result as
+  a bundle artifact. This job holds the model key and NO write scope: it posts nothing. The
+  companion security/publish action holds the write token and no model key.
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  pr-number:
+    description: Pull request number to review.
+    required: true
+  head-sha:
+    description: >-
+      Full 40-character sha of the head this run reviews. Pass
+      `github.event.pull_request.head.sha` from the triggering event, not a branch name:
+      a branch moves, and the publish job refuses a bundle whose head is no longer live.
+    required: true
+  base-sha:
+    description: Full 40-character sha of the pull request's base commit.
+    required: true
+  github-token:
+    description: >-
+      Read-only token, used for the pull-request metadata that sizes the run and for the
+      git fetch. Use the workflow's own `github.token` under a job whose permissions are
+      `contents: read`, `pull-requests: read`. This action never writes to the repository.
+    required: true
+  deepseek-api-key:
+    description: DeepSeek API key. The only secret that leaves the runner, and only to the provider.
+    required: false
+    default: ""
+  anthropic-api-key:
+    description: Anthropic API key, for Claude verifiers. Optional.
+    required: false
+    default: ""
+  models:
+    description: >-
+      Per-role model map, `role=model` comma separated, roles recon/hunter/critic/verifier.
+      The verifier must differ from the hunter; the action refuses a run where they match.
+    required: false
+    default: ""
+  max-conversations:
+    description: Hard cap on model conversations for the whole run.
+    required: false
+    default: "18"
+  max-hunters:
+    description: Hard cap on hunter conversations.
+    required: false
+    default: "6"
+  max-verifiers:
+    description: Hard cap on verifier conversations.
+    required: false
+    default: "10"
+  max-usd:
+    description: Hard USD ceiling. The run stops rather than cross it.
+    required: false
+    default: "1.50"
+  recon-mode:
+    description: '"baseline-delta" or "per-run".'
+    required: false
+    default: baseline-delta
+  disclosure:
+    description: '"auto", "all" or "summary-only". On a public repository "auto" withholds pre-existing leads.'
+    required: false
+    default: auto
+  artifact-retention-days:
+    description: How long the bundle artifact is kept.
+    required: false
+    default: "30"
+
+outputs:
+  bundle-path:
+    description: Directory the bundle was written to.
+    value: ${{ steps.analyze.outputs.bundle-path }}
+  run-status:
+    description: '"complete" or "incomplete". Always set, even when the run failed.'
+    value: ${{ steps.analyze.outputs.run-status }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.12"
+        # No `cache:`. Under pull_request_target the cache scope is the default branch's,
+        # so a poisoned entry would outlive the pull request that planted it.
+
+    - uses: actions/setup-node@<sha>  # PIN BEFORE USE: actions/setup-node v6.0.0
+      with:
+        node-version: "22"
+
+    # Fails on a missing node, a drifted vendor manifest or a tool schema strict mode
+    # would reject, so a misconfigured runner costs no tokens.
+    - name: Selftest
+      shell: bash
+      working-directory: ${{ github.action_path }}/../..
+      run: python -E -s -m prreview.security selftest
+
+    # Inputs reach the process only through env; nothing below is interpolated into a
+    # script body, so a crafted input is a string to the shell and never a command.
+    - name: Analyze
+      id: analyze
+      shell: bash
+      working-directory: ${{ github.action_path }}/../..
+      env:
+        SA_REPOSITORY: ${{ github.repository }}
+        SA_PR_NUMBER: ${{ inputs.pr-number }}
+        SA_HEAD_SHA: ${{ inputs.head-sha }}
+        SA_BASE_SHA: ${{ inputs.base-sha }}
+        SA_MODELS: ${{ inputs.models }}
+        SA_MAX_CONVERSATIONS: ${{ inputs.max-conversations }}
+        SA_MAX_HUNTERS: ${{ inputs.max-hunters }}
+        SA_MAX_VERIFIERS: ${{ inputs.max-verifiers }}
+        SA_MAX_USD: ${{ inputs.max-usd }}
+        SA_RECON_MODE: ${{ inputs.recon-mode }}
+        SA_DISCLOSURE: ${{ inputs.disclosure }}
+        SA_WORKFLOW_REF: ${{ github.workflow_ref }}
+        SA_OUT_DIR: ${{ runner.temp }}/security-audit/run-${{ github.run_id }}-${{ github.run_attempt }}
+        SA_GITHUB_TOKEN: ${{ inputs.github-token }}
+        DEEPSEEK_API_KEY: ${{ inputs.deepseek-api-key }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+      run: |
+        set -euo pipefail
+        if [[ ! "$SA_PR_NUMBER" =~ ^[1-9][0-9]{0,8}$ ]]; then
+          echo "::error::invalid pr-number"; exit 1
+        fi
+        if [[ ! "$SA_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::invalid head-sha: expected a full 40-character sha"; exit 1
+        fi
+        if [[ ! "$SA_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "::error::invalid base-sha: expected a full 40-character sha"; exit 1
+        fi
+        if [[ -n "$SA_MODELS" && ! "$SA_MODELS" =~ ^[A-Za-z0-9._@:=,-]+$ ]]; then
+          echo "::error::invalid models"; exit 1
+        fi
+        for name in SA_MAX_CONVERSATIONS SA_MAX_HUNTERS SA_MAX_VERIFIERS; do
+          if [[ ! "${!name}" =~ ^[0-9]+$ ]]; then echo "::error::invalid $name"; exit 1; fi
+        done
+        if [[ ! "$SA_MAX_USD" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          echo "::error::invalid max-usd"; exit 1
+        fi
+        if [[ ! "$SA_RECON_MODE" =~ ^(baseline-delta|per-run)$ ]]; then
+          echo "::error::invalid recon-mode"; exit 1
+        fi
+        if [[ ! "$SA_DISCLOSURE" =~ ^(auto|all|summary-only)$ ]]; then
+          echo "::error::invalid disclosure"; exit 1
+        fi
+        if [[ -z "$DEEPSEEK_API_KEY" && -z "$ANTHROPIC_API_KEY" ]]; then
+          echo "::error::deepseek-api-key or anthropic-api-key is required"; exit 1
+        fi
+        echo "bundle-path=${SA_OUT_DIR}/bundle" >> "$GITHUB_OUTPUT"
+        # A non-zero exit still leaves a bundle saying why; it is uploaded either way and
+        # the status is read back from it rather than from this step.
+        status=0
+        python -E -s -m prreview.security analyze || status=$?
+        run_status=$(python -E -s -c 'import json,os; p=os.path.join(os.environ["SA_OUT_DIR"],"bundle","run-metadata.json"); print(json.load(open(p)).get("run_status","incomplete") if os.path.exists(p) else "incomplete")')
+        echo "run-status=${run_status}" >> "$GITHUB_OUTPUT"
+        if [[ "$status" -ne 0 ]]; then
+          echo "::warning::the security review did not complete; the bundle records why"
+        fi
+
+    - uses: actions/upload-artifact@<sha>  # PIN BEFORE USE: actions/upload-artifact v5.0.0
+      if: always()
+      with:
+        name: ai-security-review-state-pr${{ inputs.pr-number }}
+        path: ${{ runner.temp }}/security-audit/run-${{ github.run_id }}-${{ github.run_attempt }}/bundle/
+        retention-days: ${{ inputs.artifact-retention-days }}
+        if-no-files-found: error

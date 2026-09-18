@@ -1,0 +1,272 @@
+# blocks.lock - sha256 of every named block prreview/security/skillpack.py extracts
+# from the vendored security-audit skill. A heading rename or a reordered paragraph
+# changes a block digest here even when MANIFEST still matches, which is the point.
+# skill commit c1c8a8c1471069fb0e188eeaff69b8e8db6564a8
+# regenerate: python3 -m prreview.security.skillpack lock
+# <sha256>  <bytes>  <block name>
+a77314a41386339b950b90c3ba5d89d89d41b0c4a4c38a6dce5f6ead939bb9ef     688  AI-AND-LLM.md#Action-confirmation and approval binding
+831bfe0b9193a6e98edb9834406c72467382aafdb079d6d989f2a09fb10dc373    1850  AI-AND-LLM.md#Context, retrieval, and memory attack classes
+d644f6883bc6d767a37379db33ddc9b66c78a8f09d0485c1a1b620fd714aeb49    1374  AI-AND-LLM.md#Core discipline
+017cdf97d6f9858e3f96ec6aeb35c865822bd09e33cad261c97e470507c91c88     326  AI-AND-LLM.md#Cross-session or cross-tenant context bleed
+a5ae4a9f33bb678860eff19763c85cd33dbb201cb60d112cb7da3d3b4cb4550d     410  AI-AND-LLM.md#Excessive agency and confused-deputy authority
+76f490236aeb1739bc98c9732ed476e67e894dab9dc62af3908a82b0c0188fbf     517  AI-AND-LLM.md#Indirect injection through retrieved or ingested content
+fbab766e85818bfabeedf40777eee9b1e9f919b85b1edc24c0878c0a753f82d0     337  AI-AND-LLM.md#Insecure output rendering
+3afd686941a5f2fe36fbda8d05590dc995a8752c48fffffaf3de3b8687e142c2    1201  AI-AND-LLM.md#MCP and sub-agent trust classes
+58fdc54e55c8b8d4fa46a3a56b49611f468d5f86762d16dc4bcb11e05e28ac66     373  AI-AND-LLM.md#MCP metadata and schema as policy
+ca7737346ca9b0cc6bc3e4d5d5468259ae72a5fbfaecdb3e74db005ab2060f94     435  AI-AND-LLM.md#MCP server and tool identity confusion
+772be777e26c885453b23c944383c66984bda0958785acea6ed6891799442ef8     751  AI-AND-LLM.md#Output and disclosure attack classes
+43487d8ab425ca5c532aba9dab1993a1ee163de55cbdf60b24fdb85d4918caef     523  AI-AND-LLM.md#Persistent memory poisoning
+7df8f6292d497550103cd618226b6abe0dbc28a47f8b067e8934dd0cf1526fb6     401  AI-AND-LLM.md#Prompt role and provenance confusion
+d21c57d05172acd9d3c7933ab594c4e4f92c0ce4797ae6033ab7930d2284b831     344  AI-AND-LLM.md#Sensitive context extraction
+3c2527af24f32c71adff1bfed6e4b0def7282482cc7fd2064c692df76cdeaa2b     326  AI-AND-LLM.md#Sub-agent and MCP trust inheritance
+697cdf33af30e48c0ec81c030c0713936a60dc5a87dfb17e2cc92a6137621c12    2294  AI-AND-LLM.md#Tool and action attack classes
+9f97315ae86732e2723a6ea7e5359022277593fb57ed484bb6528df085777af1     365  AI-AND-LLM.md#Tool-argument injection into a downstream sink
+b0955190ab35df3ab61eaaf413a6e784163f19ebe027030b4c4a250900dc4366     387  AI-AND-LLM.md#Tool-schema and dispatcher disagreement
+da70b74e83310459e7859dc06d84f385061f3e8a0e77d06f2f8c5171b64e43a6     374  AI-AND-LLM.md#Unbounded delegated action loops
+13c4ac4335f638e2ab6b79f39acefb4957f2e0edf0df6605bb33298744c23122     611  AI-AND-LLM.md#Universal moves
+280b494a6577f7ef98d9e78ffd4023580d624ac3348b66c502cbd554c57b23bf    1670  AI-AND-LLM.md#Validation rules
+95aa24f70250a8cb87c5e16f0e8eb65acbb0decdf2e1b7f15d5c2455ad206bcf     777  ATTACK-CLASSES.md#Access control
+8198be2db602ba2dec4c09e8327470e91377ee339f6c479ee26db9b2bae93416    1476  ATTACK-CLASSES.md#Business logic
+39697ac088b17624a5d832a257752823d87d2d7d4ca5e5a5a01d98819d1002de    1558  ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries
+17663b4159c7b9b86ab2a4cab1b704d89a38dbcbc487bad2c5b88559a6d2d67c     496  ATTACK-CLASSES.md#Cryptography and secrets
+b9c62ba24c5a81bd8801444810b983ef2118b489379af288c478e529edba434d    1698  ATTACK-CLASSES.md#Feature abuse and data leakage
+bf331e656e150ac7deedafeb3f814a0f2ad49b8460148a7f8fce6b613e21fe0f    1120  ATTACK-CLASSES.md#Injection
+89e25a2a92630854a7ff0d6402cb6f9ed6a14a17c12d43a361232d459f745b6c    2278  ATTACK-CLASSES.md#Obvious things
+b079391d5764185a9c89b5e01fb925c8fae639cd34ec616120a718bbc291fbe1     555  ATTACK-CLASSES.md#Resource and file handling
+7818024c9c975b60fbce63e8ee1bd2f5e4daa905f7df2db869d95a732126afe0    2325  ATTACK-CLASSES.md#Wildcard
+e4e451f02183873d263da9acdd9fa32a4d984fe0cd846afe6402f1b72c207c92     436  CLIENT-SIDE.md#Browser-storage disclosure and stale authorization
+4aa6bb678e40fbada9c4e050b84392eb2a4878435ff62b5b41bee8af78cb6024     266  CLIENT-SIDE.md#Clickjacking
+6efcf76c7be21882a9610080317247fec915ec82085c29e0382e31567f075a77     349  CLIENT-SIDE.md#Client-side navigation confusion
+eda5157ae25b569aa94831843118ffc65d48275b82ac0490f98f57dcc17299da     881  CLIENT-SIDE.md#Core discipline
+59e988019875d703a0d12f4284fb0efaa43b5d51f6fa1b463dcac6e57697f65d     280  CLIENT-SIDE.md#Credentialed CORS trust
+941f91321700f0ad72c9772a6786b5c4d3a15cd14b2e3b2de80b90bfefa4363c     327  CLIENT-SIDE.md#Cross-context storage and broadcast confusion
+4a0a1b1a116ec5bee7744d196cbd26135e8193fb624ef3ecf5ec05425cf1fd15    1025  CLIENT-SIDE.md#Cross-origin messaging and network attack classes
+8c66e6a88aad4921ca8241f82caeee2d136be89590403222f5a56c72edc0df0c     287  CLIENT-SIDE.md#Cross-site WebSocket request use
+31b72ed3647e3a1deca0318ab06fb5ebbc91d3a036b9dcb3df33df6062517b9b     865  CLIENT-SIDE.md#Cross-site information leak classes
+9ad257f0adb08885ec52846df447a4e010521470b8cce5669cfaf7bd7a284d7a    1027  CLIENT-SIDE.md#DOM and object-state attack classes
+e698a5909f031b81bf691715f13d8295d3cf44e5a7936a2b303700ebad1b4637     270  CLIENT-SIDE.md#DOM clobbering
+201565f1ac3673aa2c9b16b7de26cff7559d28b2ac98b38c2fff5663e13511cc     333  CLIENT-SIDE.md#DOM-based XSS
+d3ace9fdba88e45c8e9f4ba11647c4306759fcd8abddf17aefae4d83a7f4ceae     353  CLIENT-SIDE.md#Prototype pollution and gadget chain
+bf02c17bac15fac25d48f60546ed5983283db3975b8e2e1723b7514862b06284    1648  CLIENT-SIDE.md#Service-worker and browser-storage attack classes
+34f5a2361d8930509e38c7fe3a7257cceb253a042383aa902c6e06389260da01     381  CLIENT-SIDE.md#Service-worker cache and identity confusion
+67a277259cd989066cbc4a4323d2311aae6e63835beef24f2e378aaf1361c5d7     417  CLIENT-SIDE.md#Service-worker registration and scope takeover
+eb8470f6139154e229c5ac02b5a6bc6a6eadf8c0c3de6e5b8baf938e6a9ebac6     689  CLIENT-SIDE.md#UI-redress and navigation attack classes
+960db584b9ef76dd39ab74098887e1866c56594589cbcfbc03623b94f8909939     584  CLIENT-SIDE.md#Universal moves
+014f191685a61e55d54c75d33fb2a08c3ef271c88c6596e3adeb6f59d2099cf0     957  CLIENT-SIDE.md#Validation rules
+2084ffdcabefbfcc6a84ab46e040a6f4d38053b68490d58a52c64799da43592b     349  CLIENT-SIDE.md#Window and opener state disclosure
+cee5713c727e42eee53b06000bb51546fdeea43cf6451264ae3cc0fd92af1104     447  CLIENT-SIDE.md#XS-Leaks and cross-origin state oracles
+eed0a2ae3358dc3e5bf8d9dd573e50d74aa44c96140e9383d0e3ca018a8dbdff     373  CLIENT-SIDE.md#`postMessage` origin and source trust
+d7bcb4d82ebf70eb573e770b9b81f688c2719a0a9b47bedab76a0848993f1e33     278  CLOUD-AND-DEPLOYMENT.md#Admission and policy path inconsistency
+214421f166bc147f61fc9e4b43dc35290af68685c0f0e0e68acb291208d7f405     291  CLOUD-AND-DEPLOYMENT.md#Application authorization delegated to cloud metadata
+85b4e3bde2dd521ea725f1fbac45befc16012ba458cfdad5077d0ae84a97cf77    1021  CLOUD-AND-DEPLOYMENT.md#Configuration and secret lifecycle attack classes
+52163d5946d7dfffe7c519b6c2d450080f7c2f5d7dc852bcd2a43ece21fa2d68     976  CLOUD-AND-DEPLOYMENT.md#Container and orchestration attack classes
+970f766fc50fc9b21540b777f9865d991690b83d697d8f4dfe515cb79f344d09     852  CLOUD-AND-DEPLOYMENT.md#Core discipline
+eac2add0983c8e905a4ffa010748326451e24c0f5104fd2f2398940609cee5ba     267  CLOUD-AND-DEPLOYMENT.md#Credential renewal and outage fallback
+0096ef41d4f3116b1f5f6aa199f49efe6e2738ac6bff2526d90507e49bb2a7fa     305  CLOUD-AND-DEPLOYMENT.md#Cross-account or cross-tenant role confusion
+dacac1cc1ac98f559f3ad185af7ce37a337fbff11afc6e7958ff36e0b252d843     272  CLOUD-AND-DEPLOYMENT.md#Edge/runtime boundary mismatch
+8ddb37011a4ab973aa0c1e56b061171d6861a7dfa7fe4fd170a81ff2aac809b9     250  CLOUD-AND-DEPLOYMENT.md#Event-source identity confusion
+0296f2be3400253e0b6dd9f9a1f45b6c66de13fc4f7cc435b1c23bba6671980e     366  CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure
+c3fc12f7c92cf1ccd2f61e1eea121d42ce6c56c2a033b6a5e116d8905fa67201    1146  CLOUD-AND-DEPLOYMENT.md#Ingress, network, and control-plane attack classes
+6fdf86c5c3bd9f744ba22814e1c437c2eb4af796c984b571c34c90687f42b2c0     853  CLOUD-AND-DEPLOYMENT.md#Managed storage, events, and edge attack classes
+7e5339f697e52cd2645a589805124d99d79e23dd6f87167d9c412d250840d20f     346  CLOUD-AND-DEPLOYMENT.md#Metadata and internal-service reachability
+371dfc5bfcfb2a90cd1c7f7e46fdc1538d3dd877000bf55fe44d00e53f1e3e1d     254  CLOUD-AND-DEPLOYMENT.md#Namespace and label trust confusion
+d679f3135cc0f9c6ea476f7ca6ae9788d4b48fa04ef62447fdb4514c3228ea6c     247  CLOUD-AND-DEPLOYMENT.md#Object and signed-URL policy confusion
+cf7121a99b8a57d3935f3ae6f289ce1c53e9dabb38ae341abdbdb2847a0c5ec5     306  CLOUD-AND-DEPLOYMENT.md#Secret exposure across workload boundaries
+869be6a39b226a7a07a821aada920ebb483538440cc7ec6f105d07069ff12338     363  CLOUD-AND-DEPLOYMENT.md#Security-control precedence drift
+37efe843fc7b4e165b0fe144cc599345fab1a1c1a212e92e3b61e7f4fe29c85c     325  CLOUD-AND-DEPLOYMENT.md#Trusted-proxy and mesh identity bypass
+a880db72cb96a0a4716379dfdf1bf33b042fe928cfe9ab660031b33dc50d0bdb     389  CLOUD-AND-DEPLOYMENT.md#Unexpected service or management-plane reachability
+06e0e5ac1f2b913d77706aa9b662c3e7c79ce1723d126f0a0d64896da0b7a4ed     599  CLOUD-AND-DEPLOYMENT.md#Universal moves
+4d536adfe66aafbba55db1346ba5c2d44b9d3b7f7a11ef8c4a791b36cfc78064    1010  CLOUD-AND-DEPLOYMENT.md#Validation rules
+d06eb77f7b2cacfe4793324234ba7c3cbdd616867729b8cb19b1247644e851c2    1006  CLOUD-AND-DEPLOYMENT.md#Workload identity and IAM attack classes
+58aab81ecdf22f95653229639f17de9c67b1e36dae6543436dd3f19e0bf18c86     334  CLOUD-AND-DEPLOYMENT.md#Workload identity overreach
+087623e3d1885cfcce2474a994073d52827ac82115630c18d5d663efe0bc7c3f     320  DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers
+91b2bcf9c6bad25f075aa3dad50dd362dda5641b5c991b9547e5cc91b37f7485     299  DATA-ISOLATION-AND-LIFECYCLE.md#Backup and replication boundary drift
+8baacfcdc510eee45159e0043ba47ce44a8ab0e6e656e6b0badc7b595582c52a     299  DATA-ISOLATION-AND-LIFECYCLE.md#Blob and signed-reference overreach
+9c2eaec655a473fef9a2d30e653174423677ef166be8d6c6bcd162e99e5bcba4     293  DATA-ISOLATION-AND-LIFECYCLE.md#Composite-key and namespace collision
+4750e48c8ed9fef89e715d2a57e698aa626d764d4834ae99b8b683f98b06313a     921  DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline
+2633638ad9065a114f980f8fc133ba3b6ef5463a6de9ff862f3992bdb9c8849c    1166  DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes
+88d02db98c34f67c82e7a8d8086b54d5dbf29b48be8d85f8e9aa3f7e89fba308     947  DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure attack classes
+72d9ea3c0deffd660b66f6e0219679e1604b48aef8d745382ba6940517b014e0     289  DATA-ISOLATION-AND-LIFECYCLE.md#Enumeration and aggregate oracles
+f237cd4d6e3678bd0d8db00b07b30bfd24cdf0be2fc7988b2bf7d6df3757c4c8     319  DATA-ISOLATION-AND-LIFECYCLE.md#Export and backup scope expansion
+5e1bb3721f40b22b1c804597b62c1877b396a7433ced5f6161a80a660aa1e9d8    1312  DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes
+c1ddd1ecf29f45c2b8d71f41d26085f43eeb04c4ade689275b4148324c3f75c6     327  DATA-ISOLATION-AND-LIFECYCLE.md#Import and restore authority expansion
+6ec41c64ba8e19b7c3f8955c87896d71164e0c30e6b82890caabf1db04354210     276  DATA-ISOLATION-AND-LIFECYCLE.md#Migration default and ownership confusion
+139a6e8a23d3374f4b59891395dca100b5ee069336482fa74be0f22db324782c     301  DATA-ISOLATION-AND-LIFECYCLE.md#Missing tenant or owner enforcement
+a1b7a3f068cc837cfdac01735937751d29eae549694df323a7f552fcaacacd96     273  DATA-ISOLATION-AND-LIFECYCLE.md#Policy and query disagreement
+24e37b6598aa9685dbdc7b48ae10018b23d57780920c7d686971c18de8299584     259  DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state
+4f850b813c45e71db56de25d2972fc24fbb6a2e3d38e5627d0ca847e67abaeeb     262  DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun
+95309698ca0f3701e3cea5bbd9008c6d197cae3b249e29d490480b513d9b3b6b     260  DATA-ISOLATION-AND-LIFECYCLE.md#Search, cache, and index ACL drift
+c692df947d9ed799c9a60fad63186f5609f1e7273dedcaf24f5d82b64568d405     298  DATA-ISOLATION-AND-LIFECYCLE.md#Soft-delete and tombstone bypass
+310bcbb5b3231e18809f3c79094b49509568c330c856cf35236caefc8d2d8caf     259  DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use
+e2d4893e80fe20b265a66c0fc40de3c6584d11ba54231d6eff9743b4ef431d87    1246  DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes
+739e87c219b44f0f90e19872f877e6bfa6fc302301a562607eb482cb6bfd002d     549  DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves
+bc8b6b14115ecb78fb98d3f9e47708349da568a9437be00cdf2a50f624df6ecc     901  DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules
+6d6e9cc72d9b2f206878ff037d5d2fcda15b937cab418b224e19a439ba172fe0     280  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Account switch, logout, and device restore leakage
+d9bf084c8b2a97f5294d1dac1dc583eceda8b2b99efaeb39e6c6355a37fe920e     298  DESKTOP-MOBILE-AND-LOCAL-IPC.md#App and account handoff confusion
+44a0020272d930656fa4dc02ab00ee434e468875c7f748d4ec522b0a7ba70e35     697  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Application-state and device-lifecycle attack classes
+5a489abb75d8bedeeb1f1e889b21da61928d79d12f432a8f10b34ecf5bd55c36     274  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Claimed principal versus channel identity
+3a1686b31eb28dbe9646fea47ef129e596808901b79a81213bc8a0728be762f0     956  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline
+270a3f01be1365d249268b8b3422062841e35445a3cf7e8641b0625fd2195e5f     361  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Credential-store and local-secret boundary mismatch
+73d4bdc5643a22eaf6b0acd94cd00b0c2ba6e1df4bf4f4b11bec9c902c072bdd     356  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Custom-scheme and deep-link ambiguity
+bbb46e6e1c95286a1e1529285009d8c3681220f261519b24cc581169f35a8965    1038  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Deep-link, callback, and navigation attack classes
+35be3a0da66b56881b3c6d46b61ac70c4c4e28e733fe68e3a637f23d9d6715ae     370  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Exported service, activity, receiver, or provider overreach
+3d8ff59bd70495bdddc23e0710a8a0b81b776602dc2e9dac6b8a0d4f96f2ddba     298  DESKTOP-MOBILE-AND-LOCAL-IPC.md#File-open and intent authority confusion
+65e3a82edff3c3842e899807179649c8cb1e7eee326e81b78e7d92b92b6df7a9     329  DESKTOP-MOBILE-AND-LOCAL-IPC.md#IPC lifecycle and correlation confusion
+edaaca827e65127fb42306544d9842d55da259d3fc162d7e4e779f9cc78f0c1d     312  DESKTOP-MOBILE-AND-LOCAL-IPC.md#IPC peer-authentication gaps
+82dbd166a095db3bede94e9a71bc273a4019806d749901a8e411b394f20bde3a     276  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Install, update, and repair path trust
+790f9670fa5ba280621565cda2aedf9441d5ac8429d10c899058d57833c01ca5    1370  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local IPC and exported-component attack classes
+2149e6a3ee1e9e49e554af89061c45cc81cf6c9d923e5b0f33b83c24fbad276f     302  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU
+861953252ca3dc91463d5ee594a953851831a55a94f7cfd136bf617af55678ca     329  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Navigation-origin to bridge confusion
+811a2d4dfe4f9119064d663a8a448dab0f9fba80b7f4b124fe5d587a6432bc9f     295  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Over-broad native bridge capabilities
+a92c919e2fa73ba81586a307f62024149214954d01eb3d5df2bca632c9171c70     330  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Pending-action and user-presence confusion
+fa1d4f1f335bac07d1f63258eb4135816f097107ec76a0f5a0d558038147ec9d     280  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy
+deea9b98010687028abd3d5a07dceb64ebafdbf0ee08f7d2461383b4df81d8d3    1304  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file attack classes
+394f102a4fee4f889ca3c4b4725f8fdf0faf1fd0641f691eab0d03eccb0e045d     603  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves
+07d0cdac27d3b1ac3990a3bad013177dd50595590103420604b60efd4e3c6268     951  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules
+f213170adad5f8d5f2dbf7e4d432f48c8ffb8402c6373e7ea77c12576b5836f3    1032  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Webview and native-bridge attack classes
+1200b5127d2a54b540c5685e79e3e5ab3768d2fc08ae53e56ec573da4bb35217     332  DESKTOP-MOBILE-AND-LOCAL-IPC.md#Webview file and universal access
+1b251306b0b58fcf89ffcad2123000ea7ee15a04f37df832575e2aca5d543970    1087  HUNTING.md#Candidate gate
+4ff923c63851b0560646d6e90397b1ea108e56a6dabc7fb9dc2cb5937664ad29    4426  HUNTING.md#Core hunting method
+79345ac302142fcd68e8b4e1467b801065a36b677ae0f065c7e62f289bdc60e7    4822  HUNTING.md#Coverage-critic waves
+a31f25af7923c9ce4ab9bb6707cd351e265269fa999f24f385a0689d983aef08    1524  HUNTING.md#Critic contract
+caf90e55dc1015b7df10b5c651d52e443435695bf4cd55431615e9d0cc39fc99     603  HUNTING.md#Hunter priority order
+db26dd13ebabf6420b96a6b2d03ec451361127a1197f81ef70703ef5e4b1e7f3    1392  HUNTING.md#Local validation boundaries
+90f1c1e4d33bccffc8c80471b4b768e4ebeff1197b9ed4a0fda5e4f491028e37    2160  HUNTING.md#Promotion procedure
+2f0761a87150e3e2f034df08b6d9cbc030a9f101d51dee50f3a0696fc3b487a6     810  HUNTING.md#Quick-profile critic handling
+46f72b1202b46d7ebb60bdf1ff302c090066d78449cbd255887938345aae3538    1946  HUNTING.md#Required hunter prompt
+3123228245cc868d89aac25e49a2b85aeb33f0a83f7d6805b371015e07ebd3d3    3325  HUNTING.md#Structured hunter result
+807e7486386ca8bad27d6e6f73df11a9d24137b68bfe0cc4c2a8635490ef1fe7    1725  MEMORY-SAFETY-AND-BINARY.md#Binary loading and runtime attack classes
+fe590313ef86ee25caf25bd38e2d4337db30fdb18ada2e5dad6b9a6c53b0c68c    1466  MEMORY-SAFETY-AND-BINARY.md#Bounds, integer, and representation attack classes
+947d13c4f5fc7c4507f95abbab0a4063c83e006962b19ac09048dff2b08d3c54    1016  MEMORY-SAFETY-AND-BINARY.md#Core discipline
+b398bdd5a606c7a10c9b15907f7234968fbb71c814bf02345e9ae4fb3dd9115d    1140  MEMORY-SAFETY-AND-BINARY.md#FFI and ABI attack classes
+a35c778c7571ed54807cbeebe2baa99cd3fd8832ab2ac6f8dc017fb73cd320c5     456  MEMORY-SAFETY-AND-BINARY.md#Integer overflow, underflow, truncation, and signedness
+21f1ec84558fa62245b368d92cc773b1d163f164a1f4bc8a215de11aad6f7b38     321  MEMORY-SAFETY-AND-BINARY.md#JIT and generated-code consistency
+64191ff6ec95580bbd0f93e28cd47fa6392b9ce2aea7801b808068f3afd293e5     962  MEMORY-SAFETY-AND-BINARY.md#Kernel and privileged-interface attack classes
+680e41e1fdfe2900d6cdbe4808f89f1cf4cab44476378ba97f3fd6bed6159858     399  MEMORY-SAFETY-AND-BINARY.md#Layout, alignment, and enum disagreement
+94d73052f0abe41bbc0e9717424aa3851a6193fc704c5bfe321f1f18374a2b3c     441  MEMORY-SAFETY-AND-BINARY.md#Library, plugin, and executable search-order trust
+6d8049e4852e3c9f013ca3311f86d78dab5dd28306da0aeb9f741e262122b838    1761  MEMORY-SAFETY-AND-BINARY.md#Lifetime, type, and concurrency attack classes
+81eefcf59268f6f2d303f74921bd09f1f2e3096bf7c06bcc2d660ccd9265da4d     288  MEMORY-SAFETY-AND-BINARY.md#Lock-order, deadlock, and starvation
+4bcc32bc1201c166c0d507739f7810cea08d8dfff700b978f2c47e05bd594307     315  MEMORY-SAFETY-AND-BINARY.md#Malformed binary metadata and relocation handling
+c5579737fd6b835e8115918eeacb974ce7242ad933d35772b5c3ef39f8560eeb     360  MEMORY-SAFETY-AND-BINARY.md#Missing artifact identity or signature binding
+4d481bf21a420abcc8932d86e7355a6c2a4b8e301d012f5365fe3589264dd839     332  MEMORY-SAFETY-AND-BINARY.md#Out-of-bounds read or write
+031128247820a7e108f731cd3f680337c95bcd0e542b0dd48097320151271d65     354  MEMORY-SAFETY-AND-BINARY.md#Pointer-length and ownership contract mismatch
+1a15d642bbc00510a9c4ee8a7a633009712002f1f9660c53844ca712218ca2f6     284  MEMORY-SAFETY-AND-BINARY.md#Privileged object lifecycle and dispatch consistency
+bd4711ecfa819979c2fc4439a8ee55545e08e6ce3099f80f3c20661c894b0fc3     282  MEMORY-SAFETY-AND-BINARY.md#Reference-count and ownership races
+ee67916fd126e2164c40fc096cf828d0e5244bc22c545e771fa3ea0b5b36e64b     380  MEMORY-SAFETY-AND-BINARY.md#Shared-state races and TOCTOU
+f41151e729ace91b9b3ec97c0929122d3561368c8f1aeb3eb1096cdc4c30b282     404  MEMORY-SAFETY-AND-BINARY.md#Type confusion and invalid downcast
+f71a56621e91392a3e195714b0c9f2999e5cff9c97863b7b482ccedc801f4354     299  MEMORY-SAFETY-AND-BINARY.md#Under-authorized powerful interfaces
+6e8c19aead5cf775a56c0246eefb88b814d2fef8d2ae0cfc929b8289c34e52c1     305  MEMORY-SAFETY-AND-BINARY.md#Uninitialized or partially initialized data
+79bf58490b46321338eb315b62d168785a592cee7633c7c5d8afc20b8990f213     285  MEMORY-SAFETY-AND-BINARY.md#Unit and pointer-depth confusion
+92af3a6f618ef085999767f714b3437acd67a751d7188f4152a97edbf8fbabd7     637  MEMORY-SAFETY-AND-BINARY.md#Universal moves
+ef79b490f91c96b1339af56dee21538b74d2bddb637693f35b14ac116d472abe     207  MEMORY-SAFETY-AND-BINARY.md#Unload, reload, and teardown safety
+d887d87d46964b33056cc9f4b349087359bbe18a9fbf6cc2b204e589609eb067     325  MEMORY-SAFETY-AND-BINARY.md#Unwind, exception, and thread-affinity violations
+84cd2e6cb1a11928f93077b78eace2316de1fcdc902e6736fe2f6b2e9a7861da     321  MEMORY-SAFETY-AND-BINARY.md#Use-after-free, stale view, and double free
+1f14e2f59ed4d18402e260c78b11c1c8e44c34cdb5e6c9759178f1605bfe63b9     297  MEMORY-SAFETY-AND-BINARY.md#User-copy bounds and repeated reads
+a03386af206efbb311bb405cc1b5612284ecfe580cd0ba1cb68d7f2b33eec826    1047  MEMORY-SAFETY-AND-BINARY.md#Validation rules
+52294a2339ee9ca61df63583dc348f37ebe72cd069cf22907796731b9fb4f696     268  PROTOCOLS-RPC-AND-MESSAGING.md#Acknowledgment/commit ordering defects
+b2cbbd3714d80451a7d25852fba3e7eae8ed69b258c8b4e0d90c1b6b671745a0     984  PROTOCOLS-RPC-AND-MESSAGING.md#Broker and queue isolation attack classes
+08c23e525e620ab0d6f0a5902485545f523f075478467b89b946190c64cb4cb8     285  PROTOCOLS-RPC-AND-MESSAGING.md#Callback and reply-correlation confusion
+caffed86a2b69e8115d9f49fb0c8a2463bbe4e0b1eb0c404cca27124980b857d     829  PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline
+cb295f592c38bb391ad2d107b90b00e40a94139ebf7192a62388e1fa6e23fb7c     283  PROTOCOLS-RPC-AND-MESSAGING.md#Dead-letter, retry, and diagnostic disclosure
+febe1656a212b61ce25cafd9cf0ef6d09442a35437d75f3f63e2b8252acd13a3     290  PROTOCOLS-RPC-AND-MESSAGING.md#Duplicate delivery and idempotency gaps
+02bdf169cc8b74a6902c102acc002f065b413f6a065d9051ac1584781093887d     281  PROTOCOLS-RPC-AND-MESSAGING.md#Envelope and payload identity mismatch
+da3ff430f14dc67596c799484568955180094ae28b71305495758d8ff68d4241    1010  PROTOCOLS-RPC-AND-MESSAGING.md#Framing, schema, and interpretation attack classes
+1c17a006ad5fbf4d5b9a49088a127b505c5259ccda325360ad044477a92eb7b0     275  PROTOCOLS-RPC-AND-MESSAGING.md#Interceptor and method-path inconsistency
+89f3f34682fedb5d7576df8b35c17855396ef2f3f9cc8d203b2f8f37c7d94873     364  PROTOCOLS-RPC-AND-MESSAGING.md#Message boundary and canonicalization disagreement
+f57dbb60073bfa1ec091b3c14e36adf29426c5c4acc434d22757783a81c5ccc3     260  PROTOCOLS-RPC-AND-MESSAGING.md#Out-of-order and stale message acceptance
+72b96a5436f5e4998689e1bccd800db6d105fba91fdc81072e5d0ce9bbf2abf7     277  PROTOCOLS-RPC-AND-MESSAGING.md#Partial multi-consumer transitions
+dee34516fa788d3c3ba5b9870d7dba574759d52502b6bebb7191af4f6e94a032     300  PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion
+1e3d2db7ae2c6d213c45e12f830e935570d1055d0247876a37316b31cd68428d     295  PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps
+f12754c1c52afd3e16e2736038a6100eb768bfd23e5d09affdd06a7cd6dd386a    1238  PROTOCOLS-RPC-AND-MESSAGING.md#RPC identity and authorization attack classes
+10a1dfd33607397a5cc4bd1aaca1e61a568ac8b1070fe5fb5f15b6b68d3f4b1f    1181  PROTOCOLS-RPC-AND-MESSAGING.md#Replay, ordering, and transaction attack classes
+d2bfe2a654c37057ddc6103f44a5722eca93a3222553799941d318dd0cac0945     317  PROTOCOLS-RPC-AND-MESSAGING.md#Topic, routing-key, and subscription scope gaps
+9de8361887b4cbcd4ff2dcc5d1ee338963498bd5bcb45a0b641d6d31871fe1e9     279  PROTOCOLS-RPC-AND-MESSAGING.md#Union, enum, and default confusion
+e7e432bc0f8c52bdfb6e38aec94ced7695c93e12492e923a8dabf7b70147aea8     589  PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves
+0eb10ec1eb0483a38f723073cedb57bb45e6d54bf859465831489fcec41877d4     307  PROTOCOLS-RPC-AND-MESSAGING.md#Untrusted producer treated as control plane
+56a4aff8028198ead01adcff623c1faa67e4495df70c5ae0e97725bba168280d     883  PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules
+2a85476120aa728c622ebf80772a10a51c392e704b1e4ffd8c21b6726d515bca     771  RECONNAISSANCE.md#Agent 1a
+595c373412fb86c0692a7f3327145c919c9e93dd1f7df4ae72ff7b84370d5301     642  RECONNAISSANCE.md#Agent 1b
+394af6efec8e5351de5f894a1455bbbc02922463bb74e2a84c73a51497baec91     546  RECONNAISSANCE.md#Agent 1c
+1d179d52d6fe7243d381ff09bc5e9f6951383b643609074ea99b8fa0b1d14f8a    1372  RECONNAISSANCE.md#Agent 1d
+0e02a146bf86aa0db01efa5c569397395361567bdb901d56d403d541e0494b0d    1671  RECONNAISSANCE.md#Architecture summary and companion selection
+82c82d9968f6998f95cd073b2df267213896f2a860946c49e2f6572c3cd8bf41     294  RECONNAISSANCE.md#Companion selection discipline
+c7c1d572a58de023b95cb0bf592c6869073811c866c6c6d42bd5ca90748cc5d1     413  RECONNAISSANCE.md#Exclusion reasons
+30325314e16f5899f2fa85afeaf12e6bda0254d1aba62daed7bbdc74e7c7c9fa    2138  RECONNAISSANCE.md#Prior-run input
+b37a4ce9d7ce0e9d4bdb558b76bf1573262a612b147ed1c09c4170a915ebea53    1060  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Computational amplification attack classes
+e2d68b600893a659283d0111b9c1877a285f3fb7695407907162ac6d469e5ffe    1004  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline
+fe60e972339e7696e06c62b45f9add9688d4256952d9c9df8fc8774982f92f41     333  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Database and downstream query amplification
+60bf48b1bc647ad3ca6d8da2307bcf77321077fb65efa940cbffa7bf684d0502     310  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Decompression and representation amplification
+54491c66bc36e42b1b83049b98e964593b565fd34757cb975592dd58c2f404db     244  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation
+f6ac099b40c30a882c805259ab14d05d630183b119f6011bcdda0dc79b09e38c    1232  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery attack classes
+421ad1e7ecca1cbe24fbc7b608bc2bcd5a405cc2ed5850051b6695a24fb7097d     291  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks
+58f250c3a32bc69b7378f1b03c77d9fe5eaa8669aba416abf8e5788f5c54f42d     268  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Poison-record and head-of-line blocking
+7fa2d017fbc8cbfd40eec6e770aaf4271831808be2103f1bbbd53171c57fdb4d     263  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance
+840565ba8b4b7e0ac8ea5dda7dada7c335619a033e7e7a5f5ff7cbc4a7ebe8db     953  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes
+a2388aa12035341927684e26abaf86e8152bd355fe4ce4b46a840be86361d966     331  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps
+c4144604dbcf92252152d22cb4bdbdb8651a4ea3b08b26b21e752cc7dfaca193     349  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Reachable fatal error or deadlock
+7206b62fdbd3f3d010d6f92a016393360df55eb708822d22185e1ce5712b9c70     908  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation attack classes
+fe4cc456be8aae1711d216b0546b1e31c1a2c1cd607261d7161c17939e6d6acc     303  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Retry storm and fail-open amplification
+e13dbd7017cc78184aca2404bed3e827d4ad8a5a8a97ce3e5318e93852495726     339  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Superlinear parsing, matching, or evaluation
+0c87c66dc6d36a4d21090818d8afdc66e9fa577bdf4ed1a35ad2505f9be55152     301  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality
+70e8e9567b894eefa95e62d7fc7b710e62c9b8d8902a11b57f98a8a3722debc7     571  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves
+e4886da79ba4603b7974b88190de33636486f44b10e7ad365b17733556da50da     239  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback
+c54a8a2a7903564cf76a023775abe9a13b7df836406b87b9dcfc56d59e4a7b8a     966  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules
+2f3f8488fe1fcd4dde790b220bc4f29ab760d77b7ff8e4123dae4fb37052b1c9     288  RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation
+a4fbdf2f6c11c1c279e5417ba1d392809ec7d556a55f56774acf188369879ffd     810  SKILL.md#Anti-patterns
+ffadd2ccc44011e81f5c103f5ed66c656d37d78143c5331c08c0e98c4829f686    3106  SKILL.md#Core principles
+10cb2503f5c3b5d844019f07f0f86959424ca82f18d33497e5fe2a61b0f46b3a    1416  SKILL.md#Separate priority from certainty
+78240f26fcb13680fe6c76fb567910a054797e42ae693ee6d92c2f32aa104f4f     270  SUPPLY-CHAIN-AND-RELEASE.md#Automation identity overreach
+e0f0d16b98bc525d701b6b6ea87a43e22ab6ad135754e56f88309ea160527144     322  SUPPLY-CHAIN-AND-RELEASE.md#Build-context inclusion
+463dac57087ebd4a3bb04607a33cbe2e3ab666c7c91ec22338af1e9be00f08b2     269  SUPPLY-CHAIN-AND-RELEASE.md#Build-to-promotion substitution
+12c379a46d69176137788437c23f4413d30f0bdf598ccace24a67d3a37c1bf08    1337  SUPPLY-CHAIN-AND-RELEASE.md#CI and automation attack classes
+da483e2d7b9fdc31a53afe027bdb6f4b3bbed32d28da96f0faedb063df6c5dc3     330  SUPPLY-CHAIN-AND-RELEASE.md#Cache, artifact, and workspace trust mixing
+65c0cc288b4e7e5db071d5639289d27ae02c8c884eb5b4333e5f079030932317     910  SUPPLY-CHAIN-AND-RELEASE.md#Core discipline
+b268edcaf57bfe84c8f22964f838b86b3e11f72e764b6bd90c02f64eabfc01ff    1422  SUPPLY-CHAIN-AND-RELEASE.md#Dependency and build-input attack classes
+2bb65d07cf1222678606d0ea7cfda0d5cfd0a4a4054a43019f3c651848d42c6f     334  SUPPLY-CHAIN-AND-RELEASE.md#Dependency source and namespace confusion
+86eef7400942806306705818b14081c5eebfcb46554eaabb96cad5156121d119     335  SUPPLY-CHAIN-AND-RELEASE.md#Generated-source and codegen provenance gaps
+88effcbe652524f29f2296a20bd447cc170652e35f90914c165a623aa9eed61f     352  SUPPLY-CHAIN-AND-RELEASE.md#Mutable and unbound build inputs
+3c1aef348e7b2bf47bec5034e841ef8820316147f6458ab3fa8b0e947855cc51     328  SUPPLY-CHAIN-AND-RELEASE.md#Plugin and extension trust expansion
+d61bc83653f12d82a5fbb480540d3296c3097d3021511347ee26acaeebaa7540    1368  SUPPLY-CHAIN-AND-RELEASE.md#Release and update attack classes
+481fb1143eded45e3722cb6fb2aacf89ca90cca89dd8ac170dc6fd6f0ddf0953     350  SUPPLY-CHAIN-AND-RELEASE.md#Release authorization and signing-policy gaps
+4e56e277b3a4a5071d76ffdfeb10d3efb15899379447b58a229c66003c9a56c0     546  SUPPLY-CHAIN-AND-RELEASE.md#Universal moves
+7eb18f2d55f585cf322686f8e57b8953c172ce0b951a6c8f2c5e4eee2358712f     395  SUPPLY-CHAIN-AND-RELEASE.md#Untrusted code in a privileged workflow
+409d0ab1811d9f0685bcfcb934f18693f22617303756d15800d957e002555c99     350  SUPPLY-CHAIN-AND-RELEASE.md#Update metadata and rollback confusion
+fc9d7963d7126446abb81072e2b29b4251276a2ec052bdfe2c50cdca848301d4     962  SUPPLY-CHAIN-AND-RELEASE.md#Validation rules
+01f613ad0536d61d7a251675d01d66d521c1fa1bf1ad5f3263ff2d60f3e1907b     272  SUPPLY-CHAIN-AND-RELEASE.md#Workflow command and expression confusion
+18c92a01c5c057a41c225ddf23ab02cf812a912737dfc5956758e9ff6815e38c    2438  VALIDATION-AND-REPORTING.md#Candidate-verifier prompt
+af7dbbc84d881303495dfb41c83db498e4768d500f717a14908b8a44b3616bf1    1212  VALIDATION-AND-REPORTING.md#Final record checks
+6729703f3b1a0b2d3271b05b07c1a69a07a0415bd34817ee9ec23fff3de9f8e5     334  VALIDATION-AND-REPORTING.md#Quick merge
+75d8f011b68bb5b828fd5b8764ab216d3bb12624d7aa65c48710d471d1f3acf9     459  VALIDATION-AND-REPORTING.md#Verifier decision rules
+ff90c924299257b264ffbb8a070a30e5399a4b093a794c6a77bf8dab938d309e     658  VALIDATION-AND-REPORTING.md#Verifier input whitelist
+90f1c1e4d33bccffc8c80471b4b768e4ebeff1197b9ed4a0fda5e4f491028e37    2160  VALIDATION-AND-REPORTING.md#Verifier promotion procedure
+64a0ae4c8cebc1737ab396c636ac16a6d6f5e31eec3447d5f46d35122dc8ce72    1551  WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes
+590d4129d49f419bc48dc8995424f63189ec34e77a4ae5f5515e37a73e8d0f4c     284  WEB-PROTOCOL-AND-AUTH.md#API-key exposure and unsafe transport
+caa68705ef4d09f40a9b88036daea5c74531f9e803f2b634e40ebec5be3e2b8e     364  WEB-PROTOCOL-AND-AUTH.md#API-key scope and resource binding
+d89e58a37f84cdf27aff3014575e3743872ccc1b6f4112a187a475091488dd95     401  WEB-PROTOCOL-AND-AUTH.md#Account linking and identity collision
+ce4a2c1a8c159166964f2222e001a1e60caa80098a110de1769b1750d254d96f    1262  WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes
+b19343bbadc8ce3ebedd92c26d453ad1b65a10499dd2d30bd95ae4a4f55874cf     330  WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching
+9a6c11c4123a8ab32dca69eae946121247ae8fdb57325c64c4180fdd38c77961     348  WEB-PROTOCOL-AND-AUTH.md#Certificate lifecycle fallback
+c3f5503a10750cbc7e8d9c0f8f8ada324ec254ee4d7c6e5dde8a72cc353528b4     351  WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport
+072a4e7863a5d34f4df096ca861d23282ba546b30b827e943954ed8ea355a94f     973  WEB-PROTOCOL-AND-AUTH.md#Core discipline
+de45ff0cdcabbf110a42f601410775efb6fc2c54bccc7e007deeb11db5af9e74    1355  WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes
+c36c81a3235e827746974844971e801a65d0f6737d255dbe9fd781bd3cb76f1a    1664  WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes
+8e8ca86776a6dbd53ab4a1e783e30c04b7361b30887d404449128850aa752459     282  WEB-PROTOCOL-AND-AUTH.md#Host and forwarded-header trust
+8beba80026bc712472e3619e7b31462941ec3f16125883f2f5eaf1aac9b5164f     357  WEB-PROTOCOL-AND-AUTH.md#JWT verification and claim binding
+a7839d0d496bf88310622f3a5a06726bea70657e86edc3ef17553aab0081e620     371  WEB-PROTOCOL-AND-AUTH.md#MFA enrollment and assurance downgrade
+fce4fab094c1569ead14274439c9a9af45c70ba043f9381a84958b011733509a    2196  WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes
+b82523dbacd6e357e68ce9d727ce57f4edf5b4a51b7c4db1ff90bc43357bf6e6     374  WEB-PROTOCOL-AND-AUTH.md#OAuth/OIDC request and callback binding
+e93515d2b2cf709f14b6d54c24b33acd9c719901109b3a735d59558aefbe7b5a     497  WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF
+884344ec27db04a7190234b05bcb5bb2ec968cf3011b0419b5d3e66e674cc530     450  WEB-PROTOCOL-AND-AUTH.md#Password reset and broader recovery
+8b8e31538673b5a4c5b78eea8e63cb4f446b9399535266ee2b060c078e22fa41     394  WEB-PROTOCOL-AND-AUTH.md#Request framing and desynchronization
+1d6cd257f94ae8ed433ba194ca1bba1ffc371197c21d39a3ccf7893e2aca8313     252  WEB-PROTOCOL-AND-AUTH.md#Response-header injection
+cb3b8dba4d3ce7f7db5f0cc94989022688db45cdbb81b6ec49ee055717a4f305     332  WEB-PROTOCOL-AND-AUTH.md#SAML signed-object and assertion binding
+e774426710992cbc78edb84951555587293b9dcf8768d36a5f4a8db8a7319e99     348  WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation
+9d392a568b16dda88eb30e98ca17a49557a1d13a1c4e476c25f6c23336a95b43     367  WEB-PROTOCOL-AND-AUTH.md#Step-up binding and bypass
+307fd134d1ace3eeff4a6d9f0ded5f14b65a2a403ce3767d487c2443bb479d34     813  WEB-PROTOCOL-AND-AUTH.md#Universal moves
+bcc6b3cf8ed4a4a3638ae2c1b3dab14696da1d41e2e5a5e9ddd91209d6c24676    1415  WEB-PROTOCOL-AND-AUTH.md#Validation rules
+dd6232f24af05a6c3b3fe85df1156cd41b0f5b2ea1849f85fb272622a07ec5ce     329  WEB-PROTOCOL-AND-AUTH.md#Web cache poisoning through unkeyed input
+16cd977bc13dcbfec5e46e106cf0047f1e1aa7f9f2a256abea9bb1e5e03041cf     516  WEB-PROTOCOL-AND-AUTH.md#WebAuthn and passkey verification
+cc76fa8600332dfb288814fea007b9cb474db46ac246eb819531fa66c5e9d71b     486  WEB-PROTOCOL-AND-AUTH.md#mTLS peer and application-identity confusion
+ca2ade73eb3aa6bc78761a6144b92d0083d67809df3d02d5b5cb35e29575907e    7900  report-schema.json#confirmed
+b88c2b6dd1d6007f785b60d3fc50759b0f010f0963207ba92e8c3bb2035ceb39    3510  report-schema.json#needs_validation
+46c8f9ec0816fd08905039778ca9d34b3c372dbfb59117d16fa142e5c44b416d    2879  report-schema.json#rejected
