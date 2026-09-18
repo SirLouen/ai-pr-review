@@ -206,6 +206,19 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("suppressions", data)
         self.assertIn("prior_source_state", data)  # the spelling publish reads
 
+    def test_omissions_from_every_agent_reach_the_report_once(self):
+        """A file an agent could not open must be listed, not silently dropped."""
+        parent, _, _ = self.build()
+        big = {"kind": "oversize", "path": "dist/app.min.js", "ref": "head",
+               "reason": "blob exceeds the read cap", "detail": ""}
+        spent = {"kind": "tool_budget_exhausted", "path": "", "ref": "",
+                 "reason": "budget spent", "detail": "used=300001"}
+        for state in ({"omitted": [big]}, {"omitted": [big, spent]}, {}):
+            parent.conversations.append(type("R", (), {"state": state})())
+        collected = parent.omissions()
+        self.assertEqual([o["kind"] for o in collected], ["oversize", "tool_budget_exhausted"],
+                         "each gap once, in the order it was first seen")
+
     def test_deviation_register_is_written_not_implied(self):
         parent, _, _ = self.build()
         parent.deviate("delta reconnaissance", "baseline available")

@@ -86,15 +86,30 @@ def build_source(root):
 
 
 class StubHub:
-    """Only the two calls the driver makes before anything is fetched."""
+    """The calls the driver makes: PR facts before fetching, then the prior-run lookup.
+
+    `artifacts` is empty by default, which is a first run on this pull request.
+    """
 
     def __init__(self, base, head, private=False, changed_files=1, additions=1,
-                 deletions=1):
+                 deletions=1, artifacts=()):
         self.base = base
         self.head = head
         self.private = private
         self.numbers = (changed_files, additions, deletions)
+        self.artifacts = list(artifacts)
         self.calls = []
+
+    def list_artifacts(self, repo, page=1, per_page=100):
+        self.calls.append(("list_artifacts", repo, page))
+        return {"total_count": len(self.artifacts),
+                "artifacts": self.artifacts if page == 1 else []}
+
+    def get_run(self, repo, run_id):
+        raise AssertionError("no artifacts, so no run should be looked up")
+
+    def download_artifact(self, repo, artifact_id, max_bytes):
+        raise AssertionError("no artifacts, so nothing should be downloaded")
 
     def pull_request(self, repo, number):
         self.calls.append(("pull_request", repo, number))
@@ -391,6 +406,11 @@ class TestAnalyze(Fixture):
             self.assertIn(record["verdict"], ("needs_validation", "rejected"))
             self.assertNotIn("severity", record, "nothing is executed, so nothing is rated")
             self.assertTrue(record["fingerprint"].startswith("sa1:"))
+        with open(os.path.join(bundle_dir, "summary.md"), encoding="utf-8") as fh:
+            summary = fh.read()
+        # These printed as "7 of ?" and "of $0.00 ceiling" while the usage keys drifted.
+        self.assertNotIn("of ?", summary)
+        self.assertNotIn("of $0.00 ceiling", summary)
 
     def test_every_bundle_carries_a_summary_that_frames_the_run(self):
         _code, bundle_dir = self.run_analyze()

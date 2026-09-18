@@ -125,6 +125,10 @@ class Orchestrator:
     def plan(self, diff, changed_files, commit_count, symbol_resolver, prior=None,
              recon_calls=1):
         """P0: routing, the coverage floor and the budget gate, before any model call."""
+        # Verified here, before any agent runs, rather than the first time a CI change
+        # needs it: otherwise an edited supplement goes unnoticed on every PR that does
+        # not touch a workflow, and fails only on the first one that does.
+        prompts.supplement_pack()
         self.diff = diff
         self.routing = routing.route(changed_files, workflow_ref=self.cfg.workflow_ref)
         self.ledger = ledgermod.seed(self.validator, self.routing, changed_files,
@@ -195,6 +199,9 @@ class Orchestrator:
                 facts, self.framer, identifier, units,
                 architecture=architecture,
                 excluded_blocks=self.routing.excluded,
+                # The routed set, with the parent's reasons, rather than every block the
+                # prompt could derive from a unit's tags.
+                supplement_blocks=self.routing.supplement_blocks,
                 peer_coverage_ids=self.peer_ids(assignments, assignment),
                 secret_facts=secret_facts, seeder_drafts=drafts,
                 context_pack=pack.render(context, self.framer), pack=self.skill,
@@ -259,6 +266,27 @@ class Orchestrator:
             self.incomplete(REASON_VALIDATION,
                             "%d candidate(s) could not be validated" % len(self.unvalidated))
         return verified
+
+    def omissions(self):
+        """Everything any agent could not read, or could not read all of, deduplicated.
+
+        Each tool session records a file it skipped for size, a binary or LFS blob, a
+        truncated grep or diff, an exhausted tool budget. Unless they are gathered here
+        they never reach the report, and "Not reviewed" would list coverage gaps while
+        silently omitting the files nobody could open -- the failure the existing PR-Agent
+        action already had, where dropped files were invisible to the author.
+        """
+        seen = set()
+        collected = []
+        for conversation in self.conversations:
+            for item in (conversation.state or {}).get("omitted") or ():
+                key = (item.get("kind"), item.get("path"), item.get("ref"),
+                       item.get("detail"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                collected.append(dict(item))
+        return collected
 
     # ------------------------------------------------------------------- run metadata
 

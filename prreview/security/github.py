@@ -86,6 +86,47 @@ class RedirectBlocked(GitHubError):
         super().__init__("refused to follow a redirect to another host")
 
 
+def _download_unauthenticated(url, max_bytes, timeout_s):
+    """GET a pre-signed download URL with no credential, refusing to read past max_bytes.
+
+    The URL is already authorised by its signature. Sending the GitHub token to the
+    storage host would add nothing and would put the token on a third-party server.
+    """
+    if urllib.parse.urlsplit(url).scheme != "https":
+        raise GitHubError("refused a non-https artifact download URL")
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as response:
+            data = response.read(int(max_bytes) + 1)
+    except (urllib.error.URLError, http.client.HTTPException, socket.timeout,
+            OSError) as exc:
+        raise GitHubError("artifact download failed: %s" % type(exc).__name__)
+    if len(data) > int(max_bytes):
+        raise GitHubError("artifact exceeds the %d-byte download cap" % int(max_bytes))
+    return data
+
+
+class ArtifactSource:
+    """The repository-bound surface state.py is written against.
+
+    state.discover/fetch take a duck-typed client with no repository argument, so they
+    stay testable without HTTP. This binds one real client to one repository.
+    """
+
+    def __init__(self, gh, repo):
+        self.gh = gh
+        self.repo = repo
+
+    def list_artifacts(self, page, per_page):
+        return self.gh.list_artifacts(self.repo, page=page, per_page=per_page)
+
+    def get_run(self, run_id):
+        return self.gh.get_run(self.repo, run_id)
+
+    def download_artifact(self, artifact_id, max_bytes):
+        return self.gh.download_artifact(self.repo, artifact_id, max_bytes)
+
+
 def split_repo(repo):
     owner, _, name = str(repo).partition("/")
     if not owner or not name or "/" in name:
@@ -228,6 +269,29 @@ class GitHub:
         return items
 
     # ------------------------------------------------------------ pull request
+
+    # ---------------------------------------------------------------- artifacts
+
+    def list_artifacts(self, repo, page=1, per_page=100):
+        return self.get("/repos/%s/actions/artifacts?per_page=%d&page=%d"
+                        % (repo, int(per_page), int(page)))
+
+    def get_run(self, repo, run_id):
+        return self.get("/repos/%s/actions/runs/%d" % (repo, int(run_id)))
+
+    def download_artifact(self, repo, artifact_id, max_bytes):
+        """The artifact's zip bytes, read with a hard size cap.
+
+        GitHub answers with a 302 to blob storage on another host. The client refuses to
+        follow that with the token attached, so the redirect is taken here by hand and
+        the second request carries no Authorization header at all.
+        """
+        path = "/repos/%s/actions/artifacts/%d/zip" % (repo, int(artifact_id))
+        try:
+            self.request(path)
+        except RedirectBlocked as moved:
+            return _download_unauthenticated(moved.location, max_bytes, self.timeout_s)
+        raise GitHubError("artifact %d did not redirect to a download" % int(artifact_id))
 
     def pull_request(self, repo, number):
         return self.get("/repos/%s/pulls/%d" % (repo, int(number)))

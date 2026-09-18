@@ -30,6 +30,7 @@ from . import render
 from . import routing
 from . import seeders
 from . import skillpack
+from . import state
 from . import tools
 from . import validate as validatemod
 from .providers.deepseek import DeepSeekProvider
@@ -504,6 +505,174 @@ def _checks_from(owner, raw):
 
 # ---------------------------------------------------------------------------- the driver
 
+class Prior:
+    """What earlier runs contribute to this one. Empty means a first-run review."""
+
+    def __init__(self, plan=None, baseline=None):
+        self.plan = plan
+        self.baseline = baseline
+
+    @property
+    def usable(self):
+        return self.plan is not None and self.plan.compatible
+
+    def unit_status(self):
+        return dict(self.plan.unit_status) if self.usable else None
+
+    def architecture(self):
+        """The baseline architecture.md as a framed prompt input, or None.
+
+        It is model-written prose from an earlier run, so prompts.py frames it as data
+        and says it may imitate the parent; here it only has to be accepted and fresh.
+        """
+        base = self.baseline
+        if base is None or not base.accepted or not base.architecture:
+            return None
+        digest = hashlib.sha256(base.architecture.encode("utf-8")).hexdigest()
+        return prompts.Architecture(text=base.architecture, origin="baseline",
+                                    commit=base.head_sha, sha256=digest,
+                                    age_days=base.age_days)
+
+    def suppresses(self, fingerprint):
+        return self.usable and state.suppresses(self.plan, fingerprint)
+
+    def reverify(self):
+        """Prior needs_validation leads. Carried only through a fresh verifier, never as-is."""
+        if not self.usable:
+            return []
+        out = []
+        for carry in self.plan.reverify:
+            record = dict(carry.record)
+            record["fingerprint"] = carry.fingerprint
+            out.append(record)
+        return out
+
+    def retained(self):
+        """Prior rejected records findings.json keeps (VALIDATION-AND-REPORTING.md:101)."""
+        return list(state.carried_records(self.plan)) if self.usable else []
+
+    def exempt(self):
+        return list(self.plan.exempt_fingerprints()) if self.usable else []
+
+    def source_state(self):
+        """fingerprint -> changed | unchanged, for the publish job's thread handling.
+
+        publish resolves a thread only when the cited source changed. Anything left out
+        is read there as "unknown", which never resolves -- so a lead that simply stopped
+        being reported is not mistaken for one that was fixed.
+        """
+        if not self.usable:
+            return {}
+        out = {fingerprint: "changed" for fingerprint in self.plan.changed}
+        for item in (self.plan.suppressed + self.plan.expired + self.plan.reverify):
+            out.setdefault(item.fingerprint, "unchanged")
+        return out
+
+    def history(self):
+        return list(self.plan.suppression_history()) if self.usable else []
+
+    def notes(self):
+        return list(self.plan.notes) if self.usable else []
+
+    def baseline_label(self):
+        base = self.baseline
+        if base is None or not base.accepted:
+            return ""
+        return "architecture.md from %s, %.1f days old" % (base.head_sha[:7], base.age_days)
+
+
+def load_prior(cfg, services, repo, diff, notes):
+    """Prior-run state and the baseline, both optional and both untrusted until proven.
+
+    Nothing here is fatal: a missing or rejected prior bundle means this run reviews as
+    if it were the first, and says so. A prior claim is only suppressed or carried when
+    its cited source is byte-identical by blob OID (SKILL.md:98), never by stored ref.
+    """
+    if not services.has_github():
+        notes.append("no GitHub token: prior-run state and the baseline were not loaded")
+        return Prior()
+    source = githubmod.ArtifactSource(services.github(), cfg.repository)
+    provenance = state.Provenance(repository=cfg.repository,
+                                  workflow_path=state.workflow_path(cfg.workflow_ref,
+                                                                    cfg.repository))
+    scratch = os.path.join(cfg.out_dir, "prior")
+    renames = state.RenameMap([(e["old_path"], e["path"]) for e in diff.get("files") or ()
+                               if e.get("old_path") and e.get("old_path") != e.get("path")])
+    try:
+        plan = _prior_plan(cfg, services, repo, source, provenance, scratch, renames, notes)
+        baseline = _baseline(source, provenance, scratch, notes)
+    except Exception as exc:
+        # Prior state is an optional input. Failing to read it must not cost the review:
+        # the run falls back to first-run semantics, which are sound on their own, and
+        # says so. Suppression only ever narrows a report, so losing it is the safe side.
+        notes.append("prior-run state ignored after an unexpected error: %s"
+                     % type(exc).__name__)
+        return Prior()
+    return Prior(plan=plan, baseline=baseline)
+
+
+def _prior_plan(cfg, services, repo, source, provenance, scratch, renames, notes):
+    try:
+        found = state.discover(source, provenance, state.KIND_STATE,
+                               pr_number=cfg.pr_number)
+        candidate = found.newest
+        if candidate is None:
+            notes.append("no earlier trusted run for this pull request; first-run review")
+            return None
+        bundle = state.fetch(source, candidate, os.path.join(scratch, "state"),
+                             expect_pr=cfg.pr_number)
+    except (state.StateError, githubmod.GitHubError) as exc:
+        notes.append("prior-run state ignored: %s" % exc)
+        return None
+    if not bundle.compatible:
+        notes.append("prior-run state ignored: %s" % bundle.reason)
+        return None
+
+    prior_head = str(bundle.metadata.get("head_sha") or "")
+    if not config.SHA_RE.match(prior_head):
+        notes.append("prior-run state ignored: it records no usable head sha")
+        return None
+    try:
+        # The earlier head is fetched so its blobs can be compared by OID. Without it
+        # nothing could be shown unchanged, and nothing may be suppressed on a guess.
+        gitsrc.fetch_commits(repo, services.remote(cfg), [(prior_head, 1)],
+                             token=services.token, protocols=services.protocols,
+                             caps=cfg.caps)
+        prior_index = gitsrc.tree_index(repo, prior_head)
+        head_index = gitsrc.tree_index(repo, cfg.head_sha)
+    except gitsrc.GitError as exc:
+        notes.append("prior-run state ignored: earlier head unavailable (%s)" % exc)
+        return None
+
+    cited = set()
+    for record in bundle.findings:
+        cited.update(state.cited_paths(record))
+    prior_oids = {p: prior_index[p]["oid"] for p in cited if p in prior_index}
+    head_oids = {}
+    for path in cited:
+        current = renames.current(path)
+        if current in head_index:
+            head_oids[current] = head_index[current]["oid"]
+    oracle = state.SourceOracle(prior_oids, head_oids, renames)
+    return state.plan_prior(bundle, oracle, renames=renames)
+
+
+def _baseline(source, provenance, scratch, notes):
+    try:
+        found = state.discover(source, provenance, state.KIND_BASELINE)
+        candidate = found.newest
+        if candidate is None:
+            return None
+        bundle = state.fetch(source, candidate, os.path.join(scratch, "baseline"))
+    except (state.StateError, githubmod.GitHubError) as exc:
+        notes.append("baseline ignored: %s" % exc)
+        return None
+    baseline = state.load_baseline(bundle)
+    if not baseline.accepted:
+        notes.append("baseline ignored: %s" % baseline.reason)
+    return baseline
+
+
 def drive(cfg, creds, services, writer, recon_calls=4):
     """P0..P5. Returns (parent, report inputs). Raises RunAborted or whatever broke."""
     validator = validatemod.Validator(cfg.vendor_dir, node=services.node)
@@ -538,16 +707,24 @@ def drive(cfg, creds, services, writer, recon_calls=4):
     secret_facts = [d for d in drafts if d.get("seeder") == "secret-scan"]
     other_drafts = [d for d in drafts if d.get("seeder") != "secret-scan"]
 
+    prior = load_prior(cfg, services, repo, diff, writer.notes)
+    architecture = prior.architecture()
+    if architecture is not None:
+        # One delta-recon agent instead of four; Orchestrator.recon registers the
+        # deviation, and the budget gate must reserve what will actually be spent.
+        recon_calls = 1
+
     provider = services.provider(cfg, creds)
     parent = orchestrator.Orchestrator(cfg, provider, validator, source, skill)
     writer.parent = parent
+    writer.prior = prior
     facts = prompts.RunFacts.from_config(cfg, skill_commit=skill.commit,
                                          commit_count=len(commits))
     parent.plan(diff, changes, len(commits), symbol_resolver(source, diff),
-                recon_calls=recon_calls)
+                prior=prior.unit_status(), recon_calls=recon_calls)
 
     changed_paths = source.changed_paths()
-    if not parent.recon(facts, architecture=None, changed_paths=changed_paths):
+    if not parent.recon(facts, architecture=architecture, changed_paths=changed_paths):
         parent.notes.append("no reconnaissance agent returned a usable result; companion "
                             "selection rests on the parent's routing alone")
 
@@ -557,9 +734,21 @@ def drive(cfg, creds, services, writer, recon_calls=4):
     note_empty_wave(parent, launched, hunted)
     candidates = close_wave(parent, hunted, source, taken, parent.notes)
 
-    parent.critique(facts, candidates)
-    records = parent.verify(facts, candidates)
-    gate, units = finalize(cfg, parent, source, records, node=services.node)
+    # A prior rejection suppresses only that exact claim, and only while its cited source
+    # is unchanged (RECONNAISSANCE.md:68); the unit itself was still re-hunted above.
+    suppressed = [c for c in candidates if prior.suppresses(c.get("fingerprint", ""))]
+    candidates = [c for c in candidates if not prior.suppresses(c.get("fingerprint", ""))]
+    # A prior needs_validation lead is never carried as-is: it goes back through a fresh
+    # verifier like any new candidate (RECONNAISSANCE.md:67, VAL:91).
+    fresh = {c.get("fingerprint") for c in candidates}
+    candidates += [r for r in prior.reverify() if r.get("fingerprint") not in fresh]
+    writer.suppressed = suppressed
+
+    parent.critique(facts, candidates, architecture=architecture)
+    records = parent.verify(facts, candidates, architecture=architecture)
+    records += prior.retained()
+    gate, units = finalize(cfg, parent, source, records, node=services.node,
+                           exempt=prior.exempt())
     return parent, diff, gate, units, facts_pr
 
 
@@ -575,12 +764,17 @@ def note_empty_wave(parent, launched, hunted):
                           "result" % len(launched))
 
 
-def finalize(cfg, parent, source, records, node="node"):
-    """P5: the fail-closed gate over the whole document. Quarantines, never voids."""
+def finalize(cfg, parent, source, records, node="node", exempt=()):
+    """P5: the fail-closed gate over the whole document. Quarantines, never voids.
+
+    `exempt` covers retained prior rejections: findings.json keeps them while their unit
+    is re-reviewed and usually closes covered, which may carry no fingerprint.
+    """
     units = parent.ledger.document()
     gate = validatemod.final_gate(parent.validator, records, units, cfg.vendor_dir,
                                   line_count=source.line_counter("head"),
-                                  exempt_fingerprints=parent.unvalidated, node=node)
+                                  exempt_fingerprints=list(parent.unvalidated) + list(exempt),
+                                  node=node)
     if not gate.ok:
         parent.incomplete(orchestrator.REASON_GATE, "; ".join(gate.errors[:5]))
     return gate, units
@@ -588,17 +782,27 @@ def finalize(cfg, parent, source, records, node="node"):
 
 def render_bundle(cfg, writer, parent, diff, gate, units, facts_pr, sarif_enabled=False):
     """P6: model-free render of everything the publish job is allowed to see."""
+    prior = getattr(writer, "prior", None) or Prior()
+    parent.notes.extend(prior.notes())
     disclosure = render.Disclosure(mode=cfg.disclosure, public=not facts_pr["private"])
     report = render.RunReport(
         repository=cfg.repository, pr_number=cfg.pr_number, head_sha=cfg.head_sha,
         merge_base_sha=facts_pr["merge_base"], findings=gate.findings, units=units,
         diff=render.DiffIndex(diff.get("files") or ()), disclosure=disclosure,
+        omissions=parent.omissions(),
         not_reviewed=parent.ledger.not_reviewed(), deviations=parent.deviations,
         coverage=parent.ledger.coverage_summary(),
-        usage={"conversations": parent.spent(), "budget": cfg.caps.max_conversations,
-               "usd": round(parent.meter.spent, 4), "models": dict(cfg.models)},
+        # Keyed as render._method_section reads them; the earlier "budget" spelling
+        # printed "7 of ?" and "$0.31 of $0.00 ceiling" on every summary.
+        usage={"conversations": parent.spent(),
+               "max_conversations": cfg.caps.max_conversations,
+               "usd": round(parent.meter.spent, 4), "max_usd": cfg.caps.max_usd,
+               "latency_s": round(parent.clock() - parent.started, 1),
+               "models": dict(cfg.models)},
         run_status=parent.status, incomplete_reason=parent.reason,
         quarantined=gate.quarantined, unvalidated=parent.unvalidated,
+        suppressed=[c.get("fingerprint", "") for c in getattr(writer, "suppressed", ())],
+        baseline=prior.baseline_label(),
         profile=writer.profile, run_id=cfg.run_id)
     writer.add("findings.json", gate.findings)
     writer.add("coverage-ledger.json", units)
@@ -611,9 +815,9 @@ def render_bundle(cfg, writer, parent, diff, gate, units, facts_pr, sarif_enable
     writer.extra.update({
         "quarantined_fingerprints": list(gate.quarantined_fingerprints),
         "withheld_fingerprints": [lead.fingerprint for lead in report.withheld],
-        # publish.Bundle reads `prior_source_state`; carrying prior state is a later
-        # milestone, and an absent entry is already treated as "unknown" there.
-        "prior_source_state": {},
+        # Read back by publish (thread resolution) and by the next run (suppression age).
+        "prior_source_state": prior.source_state(),
+        "suppressions": prior.history(),
         "disclosure": disclosure.mode, "public": disclosure.public,
     })
     return report
@@ -622,7 +826,6 @@ def render_bundle(cfg, writer, parent, diff, gate, units, facts_pr, sarif_enable
 def cmd_analyze(args, env, services=None, profile="quick", scope="diff", recon_calls=4,
                 sarif_enabled=False):
     apply_overrides(args, env)
-    token = env.get("SA_GITHUB_TOKEN", "")      # config.load() pops it without returning it
     try:
         cfg, creds = config.load(env)
     except config.ConfigError as exc:
@@ -630,8 +833,10 @@ def cmd_analyze(args, env, services=None, profile="quick", scope="diff", recon_c
         # bundle to write: the publish job reports the absence instead.
         sys.stderr.write("::error::%s\n" % exc)
         return EXIT_USAGE
-    services = services or Services(token=token)
-    services.token = services.token or token
+    # config.load() hands the token back in creds as it removes it from the environment,
+    # so nothing here reads os.environ for a secret.
+    services = services or Services(token=creds.github_token)
+    services.token = services.token or creds.github_token
     writer = BundleWriter(cfg, profile=profile, scope=scope)
     status = EXIT_OK
     try:
