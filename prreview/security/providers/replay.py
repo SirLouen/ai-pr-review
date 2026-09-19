@@ -50,13 +50,13 @@ class ReplayProvider:
         _save(path, response, role, model)
         return response
 
-    def warm(self, role, model, messages, tools=None):
+    def warm(self, role, model, messages, tools=None, extra=None):
         """Warm-ups carry no content worth replaying. Record mode passes them to the live
         provider so a recorded run is priced like a real one; replay mode skips them."""
         live = getattr(self.inner, "warm", None)
         if self.mode == "replay" or live is None:
             return None
-        return live(role, model, messages, tools)
+        return live(role, model, messages, tools, extra=extra)
 
 
 def _load(path):

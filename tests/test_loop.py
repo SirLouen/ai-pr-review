@@ -280,3 +280,25 @@ class ContextCeiling(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReasoningLevel(unittest.TestCase):
+    class Recording(ScriptedProvider):
+        def complete(self, role, model, messages, tools=None, max_tokens=4096, extra=None):
+            self.extras = getattr(self, "extras", []) + [extra]
+            return super().complete(role, model, messages, tools, max_tokens, extra)
+
+    def submit(self):
+        return self.Recording([Response(tool_calls=[call("submit_hunt")], usage=usage(),
+                                         finish_reason="tool_calls")])
+
+    def test_a_level_reaches_the_provider(self):
+        provider = self.submit()
+        run(provider, FakeSession(), reasoning="off")
+        self.assertEqual(provider.extras, [{"reasoning": "off"}])
+
+    def test_no_level_sends_no_extra_at_all(self):
+        """A run with no level must send exactly what it always did."""
+        provider = self.submit()
+        run(provider, FakeSession())
+        self.assertEqual(provider.extras, [None])

@@ -71,7 +71,7 @@ class ConversationResult:
 
 
 def run_conversation(provider, role, model, system, user, session, meter=None, caps=None,
-                     max_turns=None, clock=time.monotonic, strict_tools=False):
+                     max_turns=None, clock=time.monotonic, strict_tools=False, reasoning=None):
     """Drive one agent from its first message to a validated submit.
 
     `session` is a tools.ToolSession already bound to this agent's identity, read log and
@@ -136,7 +136,8 @@ def run_conversation(provider, role, model, system, user, session, meter=None, c
 
         try:
             response = provider.complete(role, model, messages, catalogue,
-                                         max_tokens=_output_cap(caps, model))
+                                         max_tokens=_output_cap(caps, model),
+                                         **request_extra(reasoning))
         except ProviderError as error:
             if ticket is not None:
                 meter.release(ticket)
@@ -166,6 +167,15 @@ def run_conversation(provider, role, model, system, user, session, meter=None, c
                                            "a fresh agent must re-run this work"
                                 % session.rounds)
                 return done(OK)
+
+
+def request_extra(reasoning):
+    """The provider-neutral reasoning level, as `extra` or nothing at all.
+
+    Nothing is passed unless a level is set, so providers and test doubles that take no
+    `extra` keep working, and a run with no level sends exactly what it always did.
+    """
+    return {"extra": {"reasoning": reasoning}} if reasoning else {}
 
 
 def _assistant_message(response):

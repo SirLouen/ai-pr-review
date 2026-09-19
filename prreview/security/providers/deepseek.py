@@ -47,13 +47,15 @@ class DeepSeekProvider:
             body["parallel_tool_calls"] = False
         if self.reasoning_effort:
             body["reasoning_effort"] = self.reasoning_effort
-        for key, value in (extra or {}).items():
+        extra = dict(extra or {})
+        body.update(reasoning_params(extra.pop("reasoning", None)))
+        for key, value in extra.items():
             body[key] = value
 
         data = self._post("/chat/completions", body)
         return _to_response(data, model)
 
-    def warm(self, role, model, messages, tools=None):
+    def warm(self, role, model, messages, tools=None, extra=None):
         """Prefill one prompt so agents that share its prefix find the cache warm.
 
         DeepSeek caches a prompt only once a request for it has been processed, so agents
@@ -65,6 +67,8 @@ class DeepSeekProvider:
                 "temperature": 0.0, "stream": False}
         if tools:
             body["tools"] = tools
+        # The same reasoning mode as the wave it warms, or the cached prefix may not match.
+        body.update(reasoning_params((extra or {}).get("reasoning")))
         return _usage(self._post("/chat/completions", body))
 
     def _post(self, path, body):
@@ -90,6 +94,22 @@ class DeepSeekProvider:
             if attempt < MAX_ATTEMPTS - 1:
                 time.sleep(min(2 ** attempt, 8))
         raise last or ProviderError("DeepSeek call failed with no diagnostic")
+
+
+def reasoning_params(level):
+    """DeepSeek's request parameters for a provider-neutral reasoning level.
+
+    `off` is `thinking: disabled`, which the general PR-Agent review in this repository
+    already sends in production. The effort levels are sent as `reasoning_effort`, which
+    only the M1 spike's reasoning probe has exercised; None sends nothing at all.
+    """
+    if not level:
+        return {}
+    if level == "off":
+        return {"thinking": {"type": "disabled"}}
+    if level in ("low", "medium", "high"):
+        return {"reasoning_effort": level}
+    raise ProviderError("unknown reasoning level %r" % (level,))
 
 
 def _usage(data):

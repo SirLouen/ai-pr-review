@@ -68,10 +68,14 @@ class Caps:
     # that, recall degrades faster than the extra context helps.
     context_fraction: float = 0.25
     tool_output_bytes: int = 300_000
-    # Recon at 20, not 30: on the first real pull request the recon agents that ran to
-    # turn 30 were the most expensive in the run, because every turn re-sends the whole
-    # history. Two turns before the limit the loop tells an agent to submit what it has.
-    max_turns = {"recon": 20, "hunter": 26, "critic": 20, "verifier": 25}
+    # Every turn re-sends the whole history, so the late turns of a long conversation are
+    # its most expensive, and two turns before the limit the loop tells the agent to
+    # submit what it has. Measured on gopherium/gophenberg#225:
+    #   recon    20  was 30; agents that ran to 30 were the costliest and were discarded
+    #   hunter   14  was 26; the whole-diff Wildcard hunter ran 20 turns, 33% of the run
+    #   critic    8  was 20; it ran 17 turns, 25% of the run, and in the quick profile it
+    #                may only record gaps as deferred, never a finding (HUNTING.md:249)
+    max_turns = {"recon": 20, "hunter": 14, "critic": 8, "verifier": 25}
     # Cost ceilings on the warm-start pack, in tokens. The pack was sized from the context
     # window alone, and on a 1M-token model that meant up to ~125k tokens of source in every
     # hunter's first message: on gophenberg#225 hunters opened at 102k tokens and the
@@ -137,6 +141,10 @@ class RunConfig:
     vendor_dir: str
     models: dict = field(default_factory=lambda: dict(DEFAULT_MODELS))
     caps: Caps = field(default_factory=Caps)
+    # Per-role reasoning level: off | low | medium | high. Empty means send nothing and use
+    # the provider's default. Hidden reasoning was about a third of the cost of
+    # gophenberg#225; the M1 spike's reasoning probe is what should set these.
+    reasoning: dict = field(default_factory=dict)
     recon_mode: str = "baseline-delta"      # baseline-delta | per-run
     disclosure: str = "auto"                # auto | all | summary-only
     allow_custom_base_url: bool = False
@@ -192,6 +200,28 @@ def _parse_models(raw):
     return models
 
 
+REASONING_LEVELS = ("off", "low", "medium", "high")
+
+
+def parse_reasoning(raw):
+    """Parse 'recon=off,critic=low' into {role: level}. Empty means provider default."""
+    levels = {}
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        role, _, level = part.partition("=")
+        role, level = role.strip(), level.strip()
+        if role not in ROLES:
+            raise ConfigError("unknown reasoning role %r (expected one of %s)"
+                              % (role, ", ".join(ROLES)))
+        if level not in REASONING_LEVELS:
+            raise ConfigError("reasoning level for %s must be one of %s, got %r"
+                              % (role, ", ".join(REASONING_LEVELS), level))
+        levels[role] = level
+    return levels
+
+
 def shares_verifier_model(models):
     return models.get("verifier") == models.get("hunter")
 
@@ -216,6 +246,7 @@ def load(environ=None):
             out_dir=_require("SA_OUT_DIR"),
             vendor_dir=env.get("SA_VENDOR_DIR") or _default_vendor_dir(),
             models=_parse_models(env.get("SA_MODELS")),
+            reasoning=parse_reasoning(env.get("SA_REASONING")),
             caps=caps,
             recon_mode=_choice("SA_RECON_MODE", "baseline-delta",
                                ("baseline-delta", "per-run")),

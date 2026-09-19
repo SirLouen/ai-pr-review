@@ -267,14 +267,48 @@ def probe_strict_tools(api_key, report, model):
                   error=got.get("error", ""))
 
 
-def probe_pipeline(provider, report, workdir, n_verifiers, n_hunters, max_usd):
+def probe_reasoning_modes(provider, report, model):
+    """What each reasoning setting costs, whether it is accepted, and whether it still
+    answers correctly. Tools are present in every request because agents always send
+    them, and a setting that is refused alongside tools would fail every agent turn."""
+    from prreview.security.providers.deepseek import reasoning_params
+    read = _tool("read_file", "Read a file.", {"path": {"type": "string"}})
+    question = ("Without calling any tool: is 7919 a prime number? Reason it out, then end "
+                "your reply with exactly one word, yes or no.")
+    rows = {}
+    for mode in (None, "off", "low", "medium", "high"):
+        body = {"model": model, "max_tokens": 6000, "tools": [read],
+                "messages": [{"role": "user", "content": question}]}
+        body.update(reasoning_params(mode))
+        got = _raw(provider, body)
+        name = mode or "default"
+        if not got["ok"]:
+            rows[name] = {"accepted": False, "error": got["error"][:200]}
+            continue
+        usage = got["data"].get("usage") or {}
+        content = (got["data"]["choices"][0]["message"].get("content") or "").strip().lower()
+        rows[name] = {"accepted": True,
+                      "reasoning_tokens": (usage.get("completion_tokens_details") or {})
+                      .get("reasoning_tokens", 0),
+                      "completion_tokens": usage.get("completion_tokens", 0),
+                      "correct": content.rstrip(".!").endswith("yes")}
+    accepted = [n for n, r in rows.items() if r["accepted"]]
+    summary = ", ".join("%s=%s" % (n, ("%d rt%s" % (r["reasoning_tokens"],
+                                                    "" if r["correct"] else " WRONG"))
+                                   if r["accepted"] else "REFUSED")
+                        for n, r in rows.items())
+    report.record("reasoning-modes", None, summary=summary, modes=rows, accepted=accepted)
+
+
+def probe_pipeline(provider, report, workdir, n_verifiers, n_hunters, max_usd, reasoning=None):
     """The go/no-go: real verifier and hunter conversations through the production code."""
     repo, base, head = build_fixture(os.path.join(workdir, "fixture"))
     commits = gitsrc.commits_between(repo, base, head)["commits"]
     caps = Caps(max_conversations=4 + n_hunters + n_verifiers + 2,
                 max_hunters=max(1, n_hunters), max_verifiers=n_verifiers, max_usd=max_usd)
     cfg = RunConfig(repository="spike/fixture", pr_number=1, head_sha=head, base_sha=base,
-                    out_dir=os.path.join(workdir, "out"), vendor_dir=VENDOR, caps=caps)
+                    out_dir=os.path.join(workdir, "out"), vendor_dir=VENDOR, caps=caps,
+                    reasoning=dict(reasoning or {}))
     validator = validatemod.Validator(vendor_dir=VENDOR)
     try:
         skill = SkillPack(VENDOR)
@@ -416,8 +450,16 @@ def main(argv=None, provider=None):
     parser.add_argument("--model", default="deepseek-flash", help="model for raw probes")
     parser.add_argument("--skip-raw", action="store_true",
                         help="only run the pipeline probes (no direct API probes)")
+    parser.add_argument("--reasoning", default="",
+                        help="per-role reasoning for the pipeline, e.g. verifier=low,hunter=off")
     args = parser.parse_args(argv)
 
+    from prreview.security.config import ConfigError, parse_reasoning
+    try:
+        reasoning = parse_reasoning(args.reasoning)
+    except ConfigError as exc:
+        print("--reasoning: %s" % exc, file=sys.stderr)
+        return 2
     api_key = os.environ.pop("DEEPSEEK_API_KEY", "")
     if provider is None and not api_key:
         print("DEEPSEEK_API_KEY is required; nothing was sent.", file=sys.stderr)
@@ -425,8 +467,9 @@ def main(argv=None, provider=None):
     os.makedirs(args.out, exist_ok=True)
     report = Report()
     started = time.monotonic()
-    print("M1 spike: cap $%.2f, %d verifiers, %d hunters" % (args.max_usd, args.verifiers,
-                                                             args.hunters), flush=True)
+    print("M1 spike: cap $%.2f, %d verifiers, %d hunters%s"
+          % (args.max_usd, args.verifiers, args.hunters,
+             (", reasoning " + args.reasoning) if args.reasoning else ""), flush=True)
 
     live = DeepSeekProvider(api_key) if provider is None else None
     if live is not None and not args.skip_raw:
@@ -436,13 +479,14 @@ def main(argv=None, provider=None):
         probe_reasoning_cap(live, report, args.model)
         probe_json_thinking(live, report, args.model)
         probe_strict_tools(api_key, report, args.model)
+        probe_reasoning_modes(live, report, args.model)
 
     print("pipeline probes:", flush=True)
     recorder = ReplayProvider(os.path.join(args.out, "cassettes"),
                               inner=provider or live, mode="record")
     with tempfile.TemporaryDirectory(prefix="spike-") as workdir:
         parent = probe_pipeline(recorder, report, workdir, args.verifiers, args.hunters,
-                                args.max_usd)
+                                args.max_usd, reasoning=reasoning)
 
     verdict, why = decide(report)
     watch = concerns(report)

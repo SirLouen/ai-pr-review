@@ -196,3 +196,28 @@ class Replay(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReasoningLevels(unittest.TestCase):
+    def test_off_is_the_parameter_production_already_sends(self):
+        """verify_review.py sends thinking: disabled to DeepSeek today."""
+        self.assertEqual(deepseek.reasoning_params("off"), {"thinking": {"type": "disabled"}})
+
+    def test_effort_levels_map_to_reasoning_effort(self):
+        for level in ("low", "medium", "high"):
+            self.assertEqual(deepseek.reasoning_params(level), {"reasoning_effort": level})
+
+    def test_no_level_sends_nothing(self):
+        self.assertEqual(deepseek.reasoning_params(None), {})
+
+    def test_an_unknown_level_is_refused_before_it_is_sent(self):
+        with self.assertRaises(ProviderError):
+            deepseek.reasoning_params("maximum")
+
+    def test_config_parses_a_per_role_map(self):
+        self.assertEqual(config.parse_reasoning("recon=off, critic=low"),
+                         {"recon": "off", "critic": "low"})
+        self.assertEqual(config.parse_reasoning(""), {})
+        for bad in ("planner=low", "hunter=extreme", "hunter"):
+            with self.assertRaises(config.ConfigError):
+                config.parse_reasoning(bad)

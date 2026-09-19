@@ -199,7 +199,8 @@ class Orchestrator:
         except BudgetExceeded:
             return
         try:
-            usage = warm(job.role, model, messages, catalogue)
+            usage = warm(job.role, model, messages, catalogue,
+                         **loop.request_extra(self._reasoning(job.role)))
         except ProviderError:
             self.meter.release(ticket)
             return
@@ -208,11 +209,14 @@ class Orchestrator:
         else:
             self.meter.settle(ticket, usage)
 
+    def _reasoning(self, role):
+        return (getattr(self.cfg, "reasoning", None) or {}).get(role)
+
     def _converse(self, job):
         return loop.run_conversation(self.provider, job.role, self.cfg.models[job.role],
                                      job.system, job.user, job.session, meter=self.meter,
                                      caps=self.cfg.caps, max_turns=job.max_turns,
-                                     clock=self.clock)
+                                     clock=self.clock, reasoning=self._reasoning(job.role))
 
     def session_for(self, role, agent_id, expected=None, offered=None):
         return tools.ToolSession(self.source, framer=self.framer, role=role,
