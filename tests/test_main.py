@@ -727,9 +727,15 @@ class TestPublishCommand(Fixture):
         with fakehub.FakeGitHub(state) as fake:
             services = cli.Services(token="not-a-real-token",
                                     gh=githubmod.GitHub("not-a-real-token", api=fake.url))
+            outputs = os.path.join(self.tmp, "github-output")
+            env = self.publish_env(bundle_dir, GITHUB_OUTPUT=outputs)
             with contextlib.redirect_stderr(io.StringIO()):
-                code = cli.main(["publish"], env=self.publish_env(bundle_dir), services=services)
+                code = cli.main(["publish"], env=env, services=services)
         self.assertIn(code, (0, 1))
+        with open(outputs, encoding="utf-8") as handle:
+            written = handle.read()
+        self.assertRegex(written, r"^status=(published|superseded|blocked)\n\Z",
+                         "the step output is the publish status, not the exit code")
         self.assertTrue(state.issue_comments,
                         "the publish job must post a summary for every run it loads")
         self.assertTrue(state.check_runs, "the publish job must complete a check run")

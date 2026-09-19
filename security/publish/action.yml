@@ -40,7 +40,7 @@ inputs:
 
 outputs:
   status:
-    description: '"published", "superseded" or "blocked".'
+    description: '"published", "superseded" or "blocked". Empty only when the command crashed.'
     value: ${{ steps.publish.outputs.status }}
 
 runs:
@@ -103,8 +103,9 @@ runs:
       run: |
         set -euo pipefail
         status=0
+        # The command writes the `status` output itself (published, superseded or
+        # blocked); the exit code only says whether the gate passed.
         python -E -s -m prreview.security publish || status=$?
-        echo "status=${status}" >> "$GITHUB_OUTPUT"
         if [[ "$status" -ne 0 ]]; then
           echo "::warning::the bundle did not pass the publish-side gate"
         fi

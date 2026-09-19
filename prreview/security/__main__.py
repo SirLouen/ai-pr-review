@@ -923,6 +923,14 @@ def cmd_analyze(args, env, services=None, profile="quick", scope="diff", recon_a
 
 # ------------------------------------------------------------------------------ publish
 
+def set_output(env, name, value):
+    """Append a step output; the runner reads $GITHUB_OUTPUT after the step. No-op locally."""
+    path = env.get("GITHUB_OUTPUT")
+    if path:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write("%s=%s\n" % (name, value))
+
+
 def _identity(env):
     """What publish needs, validated with config's own patterns.
 
@@ -967,6 +975,7 @@ def cmd_publish(args, env, services=None):
         validator.close()
     for message in result.messages:
         sys.stderr.write("::notice::%s\n" % message)
+    set_output(env, "status", result.status)
     # "blocked" means the bundle did not pass the publish-side gate. The check run stays
     # neutral either way, so failing the job here costs no merge and hides no failure.
     return EXIT_INCOMPLETE if result.status == "blocked" else EXIT_OK
