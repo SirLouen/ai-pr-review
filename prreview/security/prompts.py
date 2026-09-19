@@ -188,10 +188,16 @@ places where this repository fails a security invariant in a way you can show fr
 Answer with one JSON object that satisfies the result contract at the end of this prompt, sent
 as the arguments of the %s tool."""
 
+# Two hunter submits in the M1 spike's fifth run failed to parse on one code quote containing
+# double quotes. Escaping is the model's job; saying so costs one line and saves a round.
+QUOTING_RULE = ("When a string value quotes code, escape every double quote inside it as \\\" "
+                "or quote the code with backticks instead.")
+
 HUNTER_CONTRACT = """Contract for this run: agent_id %s; scratch directory: none (you cannot
 write files); artifacts: none; predeclared promotion allowlist: empty, 0 bytes. Every check you
 record is a source check. Call %s exactly once with the complete result; write no prose outside
-the tool call. If the parent returns validation errors, correct the result and call %s again."""
+the tool call. If the parent returns validation errors, correct the result and call %s again.
+""" + QUOTING_RULE
 
 PEER_CLAUSE = """Peer-owned coverage IDs below belong to other hunters in this wave. Do not
 investigate or report them. The exclusion list that part 8 asks for is empty in this run: it
@@ -211,6 +217,7 @@ VERIFIER_CONTRACT = """Return through %s exactly once:
  "record": { the matching report-schema.json branch, verbatim field names },
  "same_root_cause_as": <one fingerprint from the offer list below, or null>}
 Leave out any field that does not apply to your record rather than inventing a value.
+""" + QUOTING_RULE + """
 Cite only lines you have actually seen in this conversation: those in the warm-start pack, or
 ones you opened with a tool. Every cited line is checked against what you read, and a record
 citing an unread line is returned to you. Cite the evidence that decides the verdict, not

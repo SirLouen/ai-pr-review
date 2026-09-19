@@ -11,6 +11,7 @@ Two behaviours drive the shape of this module:
   failed call as a failed run, never as "the model found nothing".
 """
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -96,12 +97,47 @@ class DeepSeekProvider:
         raise last or ProviderError("DeepSeek call failed with no diagnostic")
 
 
+def _parse_arguments(raw):
+    """(arguments, error). strict=False admits a literal newline or tab inside a string,
+    which models write in long free-text fields (M1 spike, third run); the value is the
+    same string the escaped form would give. Only if that fails is a bare wildcard read
+    as null -- never on arguments that parse as they are, where the same characters could
+    sit inside a quoted string value."""
+    try:
+        arguments = json.loads(raw, strict=False)
+    except ValueError as exc:
+        first = exc
+        try:
+            arguments = json.loads(_bare_wildcards_as_null(raw), strict=False)
+        except ValueError:
+            return None, "arguments were not valid JSON (%s)" % first.msg
+    if not isinstance(arguments, dict):
+        return None, "arguments were not a JSON object"
+    return arguments, ""
+
+
+BARE_WILDCARD_RE = re.compile(r'(:\s*)\*{1,2}(\s*[,}])')
+
+
+def _bare_wildcards_as_null(raw):
+    """Read an unquoted `*` or `**` argument value as null.
+
+    Models write "search every file" as a bare `"path_glob": *` or `**` -- three times
+    across the M1 spike runs, each costing a feedback round. A bare wildcard is never
+    valid JSON, and for an optional filter it can only mean "no filter", which is what
+    null means, so the reading is lossless. Anything else malformed still fails.
+    """
+    return BARE_WILDCARD_RE.sub(r"\1null\2", raw)
+
+
 def reasoning_params(level):
     """DeepSeek's request parameters for a provider-neutral reasoning level.
 
     `off` is `thinking: disabled`, which the general PR-Agent review in this repository
-    already sends in production. The effort levels are sent as `reasoning_effort`, which
-    only the M1 spike's reasoning probe has exercised; None sends nothing at all.
+    already sends in production. The M1 spike's reasoning probe measured it at 0 reasoning
+    tokens against 878 by default, with the answer still correct. The effort levels go out
+    as `reasoning_effort`; the probe found them accepted but with no ordered effect (low 584,
+    medium 541, high 490), so they are most likely ignored. None sends nothing at all.
     """
     if not level:
         return {}
@@ -144,14 +180,7 @@ def _to_response(data, model):
         function = call.get("function") or {}
         name = function.get("name", "")
         raw_args = function.get("arguments") or "{}"
-        try:
-            # strict=False admits a literal newline or tab inside a string, which models
-            # write in long free-text fields (M1 spike, third run). The value is the same
-            # string the escaped form would give; anything else malformed still fails.
-            arguments = json.loads(raw_args, strict=False)
-            error = "" if isinstance(arguments, dict) else "arguments were not a JSON object"
-        except ValueError as exc:
-            arguments, error = None, "arguments were not valid JSON (%s)" % exc.msg
+        arguments, error = _parse_arguments(raw_args)
         if error:
             # The API call itself succeeded; the model wrote a malformed call. That is the
             # tool surface's to answer, so the model can resend it.

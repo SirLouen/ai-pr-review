@@ -167,8 +167,9 @@ READ_SCHEMAS = {
         "pattern": _string("Literal text, or a POSIX extended regex when fixed_string is "
                            "false. At most 200 characters, no newline."),
         "ref": _string(REF_DESC),
-        "path_glob": _string("Restrict the search, e.g. `src/**` or `*.ts`. null searches "
-                             "the whole tree. Only [A-Za-z0-9._/*?[]{}!-] is accepted.",
+        "path_glob": _string("Optional. Leave it out to search every file. To restrict the "
+                             "search, give a quoted glob string such as \"src/**\" or "
+                             "\"*.ts\". Only [A-Za-z0-9._/*?[]{}!-] is accepted.",
                              nullable=True),
         "fixed_string": _boolean("Treat the pattern as literal text. null means true.",
                                  nullable=True),

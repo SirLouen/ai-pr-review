@@ -61,9 +61,10 @@ class ResponseParsing(unittest.TestCase):
             deepseek._to_response(completion(""), "deepseek-flash")
 
     def test_unparsable_tool_arguments_become_a_recoverable_call(self):
-        """The M1 spike lost a verifier to `"path_glob": **`. That is the model's slip,
-        not a provider failure, so it must reach the tool surface to be answered."""
-        raw = '{"fixed_string": true, "path_glob": **, "pattern": "db.query"}'
+        """A malformed call is the model's slip, not a provider failure, so it must reach
+        the tool surface to be answered. This one is the fifth spike run's: code quoted
+        inside a string without escaping its double quotes."""
+        raw = '{"description": "builds "SELECT" by concatenation", "pattern": "db.query"}'
         data = completion("", [{"id": "c1", "function": {"name": "grep", "arguments": raw}}],
                           finish="tool_calls")
         response = deepseek._to_response(data, "deepseek-flash")
@@ -221,3 +222,30 @@ class ReasoningLevels(unittest.TestCase):
         for bad in ("planner=low", "hunter=extreme", "hunter"):
             with self.assertRaises(config.ConfigError):
                 config.parse_reasoning(bad)
+
+
+class BareWildcards(unittest.TestCase):
+    """M1 spike: `"path_glob": *` and `**` three times, each costing a feedback round."""
+
+    def parse(self, raw):
+        return deepseek._parse_arguments(raw)
+
+    def test_a_bare_wildcard_is_read_as_no_filter(self):
+        for raw in ('{"pattern": "db.query", "path_glob": **, "ref": "head"}',
+                    '{"pattern": "x", "path_glob": *}'):
+            arguments, error = self.parse(raw)
+            self.assertEqual(error, "", raw)
+            self.assertIsNone(arguments["path_glob"])
+
+    def test_valid_arguments_are_never_rewritten(self):
+        """The same characters inside a quoted string value must survive untouched."""
+        raw = '{"pattern": "note: *, and **}", "path_glob": "src/**"}'
+        arguments, error = self.parse(raw)
+        self.assertEqual(error, "")
+        self.assertEqual(arguments["pattern"], "note: *, and **}")
+        self.assertEqual(arguments["path_glob"], "src/**")
+
+    def test_other_malformed_json_still_fails(self):
+        arguments, error = self.parse('{"a": "unterminated}')
+        self.assertIsNone(arguments)
+        self.assertIn("not valid JSON", error)
