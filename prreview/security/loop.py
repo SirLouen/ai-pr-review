@@ -62,11 +62,17 @@ class ConversationResult:
 
 
 def run_conversation(provider, role, model, system, user, session, meter=None, caps=None,
-                     max_turns=None, clock=time.monotonic, strict_tools=True):
+                     max_turns=None, clock=time.monotonic, strict_tools=False):
     """Drive one agent from its first message to a validated submit.
 
     `session` is a tools.ToolSession already bound to this agent's identity, read log and
     fingerprint allowlists. The loop never touches the repository itself.
+
+    `strict_tools` is off. DeepSeek's strict mode refuses these schemas outright ("field
+    `type`: unknown variant `array`" -- it cannot express a nullable array), and the normal
+    endpoint only accepted the flag by ignoring it. Sending it anyway would break every
+    request the day that endpoint starts enforcing it. tools.check_schema validates every
+    argument either way, so nothing is lost.
     """
     caps = caps or session.caps
     max_turns = max_turns or caps.max_turns.get(role, 20)
@@ -152,9 +158,18 @@ def _assistant_message(response):
     if response.tool_calls:
         message["tool_calls"] = [
             {"id": call.id, "type": "function",
-             "function": {"name": call.name, "arguments": _json(call.arguments)}}
+             "function": {"name": call.name, "arguments": _arguments_text(call)}}
             for call in response.tool_calls]
     return message
+
+
+def _arguments_text(call):
+    """What the model actually sent. A call that did not parse is echoed verbatim, so the
+    history matches the error the next turn explains, rather than a re-serialised null."""
+    raw = getattr(call, "raw", None)
+    if getattr(call, "error", "") and raw is not None:
+        return raw
+    return _json(call.arguments)
 
 
 def _no_tool_call_notice(session):
@@ -166,10 +181,13 @@ def _no_tool_call_notice(session):
 def _output_cap(caps, model):
     """Output ceiling per request.
 
-    Generous because reasoning tokens are billed and counted here, and a truncated
-    submit is a wasted conversation.
+    DeepSeek counts reasoning tokens against max_tokens (M1 spike: a 64-token cap left
+    no answer at all), and a verifier spent about 10.5k tokens on one submit turn. At
+    the old 16k ceiling that is too little headroom: a verifier that reasons past the cap
+    gets an empty answer and the conversation fails. Only tokens actually produced are
+    billed, so the higher ceiling costs nothing on the turns that do not need it.
     """
-    return min(16_000, max(4_000, caps.context_tokens(model) // 8))
+    return min(32_000, max(8_000, caps.context_tokens(model) // 8))
 
 
 def _json(value):

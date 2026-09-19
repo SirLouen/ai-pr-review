@@ -101,11 +101,15 @@ def _to_response(data, model):
         raw_args = function.get("arguments") or "{}"
         try:
             arguments = json.loads(raw_args)
-        except ValueError:
-            raise ProviderError("tool call %s had unparsable arguments: %s"
-                                % (name, str(raw_args)[:200]))
-        if not isinstance(arguments, dict):
-            raise ProviderError("tool call %s arguments were not an object" % name)
+            error = "" if isinstance(arguments, dict) else "arguments were not a JSON object"
+        except ValueError as exc:
+            arguments, error = None, "arguments were not valid JSON (%s)" % exc.msg
+        if error:
+            # The API call itself succeeded; the model wrote a malformed call. That is the
+            # tool surface's to answer, so the model can resend it.
+            tool_calls.append(ToolCall(call.get("id") or "", name, None, error=error,
+                                       raw=str(raw_args)))
+            continue
         tool_calls.append(ToolCall(call.get("id") or "", name, arguments))
 
     usage_raw = data.get("usage") or {}

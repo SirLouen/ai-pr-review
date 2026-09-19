@@ -60,11 +60,24 @@ class ResponseParsing(unittest.TestCase):
         with self.assertRaises(ProviderError):
             deepseek._to_response(completion(""), "deepseek-flash")
 
-    def test_unparsable_tool_arguments_raise(self):
-        data = completion("", [{"id": "c1", "function": {"name": "grep",
-                                "arguments": "{not json"}}], finish="tool_calls")
-        with self.assertRaises(ProviderError):
-            deepseek._to_response(data, "deepseek-flash")
+    def test_unparsable_tool_arguments_become_a_recoverable_call(self):
+        """The M1 spike lost a verifier to `"path_glob": **`. That is the model's slip,
+        not a provider failure, so it must reach the tool surface to be answered."""
+        raw = '{"fixed_string": true, "path_glob": **, "pattern": "db.query"}'
+        data = completion("", [{"id": "c1", "function": {"name": "grep", "arguments": raw}}],
+                          finish="tool_calls")
+        response = deepseek._to_response(data, "deepseek-flash")
+        call = response.tool_calls[0]
+        self.assertEqual(call.name, "grep")
+        self.assertIsNone(call.arguments)
+        self.assertIn("not valid JSON", call.error)
+        self.assertEqual(call.raw, raw, "the model's exact text is kept for the history")
+
+    def test_a_non_object_argument_is_also_recoverable(self):
+        data = completion("", [{"id": "c1", "function": {"name": "grep", "arguments": "[1]"}}],
+                          finish="tool_calls")
+        call = deepseek._to_response(data, "deepseek-flash").tool_calls[0]
+        self.assertIn("not a JSON object", call.error)
 
     def test_non_allowlisted_base_url_refused(self):
         with self.assertRaises(ProviderError):
@@ -149,6 +162,20 @@ class Replay(unittest.TestCase):
         self.assertNotEqual(base, request_fingerprint("deepseek-v4-pro", messages, None))
         self.assertNotEqual(base, request_fingerprint(
             "deepseek-flash", messages, [{"name": "read_file"}]))
+
+    def test_an_unparsable_call_replays_as_unparsable(self):
+        class Inner:
+            def complete(self, role, model, messages, tools=None, max_tokens=4096, extra=None):
+                return Response(tool_calls=[ToolCall("c1", "grep", None, error="bad json",
+                                                     raw="{x: **}")],
+                                model=model, finish_reason="tool_calls")
+
+        messages = [{"role": "user", "content": "find"}]
+        ReplayProvider(self.dir, inner=Inner(), mode="record").complete(
+            "hunter", "deepseek-flash", messages)
+        call = ReplayProvider(self.dir, mode="replay").complete(
+            "hunter", "deepseek-flash", messages).tool_calls[0]
+        self.assertEqual((call.error, call.raw, call.arguments), ("bad json", "{x: **}", None))
 
     def test_cassettes_are_readable_json(self):
         class Inner:

@@ -1029,6 +1029,17 @@ class ToolSession:
                                      "available: %s" % (safe_path(name, 60),
                                                         ", ".join(list(READ_TOOLS) +
                                                                   [self.submit_tool])))
+        parse_error = getattr(call, "error", "")
+        if parse_error:
+            message = ("your %s call could not be read: %s. Resend it with every string "
+                       "value in double quotes, including globs and patterns."
+                       % (safe_path(name, 60), safe_text(parse_error, 160)))
+            if name == self.submit_tool:
+                # Same round budget and discard rule as any other malformed submit, so an
+                # agent that cannot produce valid JSON ends instead of looping to max_turns.
+                self.rounds += 1
+                return self._feedback([message])
+            return self._error(name, message)
         if not isinstance(args, dict):
             return self._error(name, "arguments must be a JSON object, got %s"
                                % _type_name(args))

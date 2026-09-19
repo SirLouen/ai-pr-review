@@ -141,6 +141,33 @@ class Happy(unittest.TestCase):
         self.assertEqual(session.rounds, 2)
 
 
+class MalformedCalls(unittest.TestCase):
+    def test_the_models_exact_text_is_echoed_back_in_history(self):
+        """Re-serialising a failed parse would show the model a `null` it never wrote."""
+        bad = ToolCall("c1", "grep", None, error="bad json", raw='{"path_glob": **}')
+        message = loop._assistant_message(Response(tool_calls=[bad], finish_reason="tool_calls"))
+        self.assertEqual(message["tool_calls"][0]["function"]["arguments"], '{"path_glob": **}')
+
+    def test_a_good_call_is_still_serialised_from_its_arguments(self):
+        good = ToolCall("c1", "grep", {"pattern": "x"})
+        message = loop._assistant_message(Response(tool_calls=[good], finish_reason="tool_calls"))
+        self.assertEqual(message["tool_calls"][0]["function"]["arguments"], '{"pattern":"x"}')
+
+    def test_strict_tool_schemas_are_not_sent_by_default(self):
+        """DeepSeek's strict mode refuses these schemas; the flag must not be relied on."""
+        seen = {}
+
+        class Session(FakeSession):
+            def tools(self, strict=True):
+                seen["strict"] = strict
+                return super().tools(strict)
+
+        provider = ScriptedProvider([Response(tool_calls=[call("submit_hunt")], usage=usage(),
+                                              finish_reason="tool_calls")])
+        run(provider, Session())
+        self.assertIs(seen["strict"], False)
+
+
 class Failures(unittest.TestCase):
     def test_discard_is_not_reported_as_success(self):
         """A discarded submit finishes the session but leaves no result."""

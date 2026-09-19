@@ -19,12 +19,17 @@ class BudgetExceeded(Exception):
 
 
 class ToolCall:
-    __slots__ = ("id", "name", "arguments")
+    __slots__ = ("id", "name", "arguments", "error", "raw")
 
-    def __init__(self, id, name, arguments):
+    def __init__(self, id, name, arguments, error="", raw=None):
         self.id = id
         self.name = name
-        self.arguments = arguments      # already-parsed dict
+        self.arguments = arguments      # already-parsed dict, or None when `error` is set
+        # A call whose arguments did not parse is still a call: the model is told what
+        # was wrong and resends it. Failing the conversation instead cost a verifier in
+        # the M1 spike over one unquoted glob (`"path_glob": **`).
+        self.error = error
+        self.raw = raw                  # the exact argument text, echoed back in history
 
     def __repr__(self):
         return "ToolCall(%s, %s)" % (self.name, sorted(self.arguments))

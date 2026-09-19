@@ -12,7 +12,7 @@ every refactor would cost real tokens to regression-test.
 import json
 import os
 
-from .base import ProviderError, Response, Usage, request_fingerprint
+from .base import ProviderError, Response, ToolCall, Usage, request_fingerprint
 
 
 class ReplayProvider:
@@ -50,7 +50,8 @@ def _load(path):
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     usage = Usage(**data.get("usage", {}))
-    calls = [_ToolCall(c["id"], c["name"], c["arguments"]) for c in data.get("tool_calls", [])]
+    calls = [ToolCall(c["id"], c["name"], c["arguments"], error=c.get("error", ""),
+                      raw=c.get("raw")) for c in data.get("tool_calls", [])]
     return Response(text=data.get("text", ""), tool_calls=calls, usage=usage,
                     model=data.get("model", ""), finish_reason=data.get("finish_reason", ""),
                     opaque=data.get("opaque") or {})
@@ -61,8 +62,7 @@ def _save(path, response, role, model):
         "role": role,
         "model": model or response.model,
         "text": response.text,
-        "tool_calls": [{"id": c.id, "name": c.name, "arguments": c.arguments}
-                       for c in response.tool_calls],
+        "tool_calls": [_call_record(c) for c in response.tool_calls],
         "usage": response.usage.as_dict(),
         "finish_reason": response.finish_reason,
         "opaque": response.opaque,
@@ -73,10 +73,10 @@ def _save(path, response, role, model):
     os.replace(tmp, path)
 
 
-class _ToolCall:
-    __slots__ = ("id", "name", "arguments")
-
-    def __init__(self, id, name, arguments):
-        self.id = id
-        self.name = name
-        self.arguments = arguments
+def _call_record(call):
+    record = {"id": call.id, "name": call.name, "arguments": call.arguments}
+    # A call that did not parse is replayed as one, so tests of that path stay honest.
+    if getattr(call, "error", ""):
+        record["error"] = call.error
+        record["raw"] = call.raw
+    return record

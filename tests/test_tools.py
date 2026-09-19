@@ -1116,3 +1116,30 @@ class TestFraming(Fixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUnparsableCalls(Fixture):
+    """A call whose arguments are not JSON is answered, never raised (M1 spike finding)."""
+
+    def bad(self, name):
+        from prreview.security.providers.base import ToolCall
+        return ToolCall("c1", name, None, error="arguments were not valid JSON (Expecting "
+                                                "value)", raw='{"path_glob": **}')
+
+    def test_a_read_call_gets_an_error_it_can_act_on(self):
+        session = self.session("hunter")
+        result = session.dispatch(self.bad("grep"))
+        self.assertFalse(result.ok)
+        self.assertIn("could not be read", result.text)
+        self.assertIn("double quotes", result.text)
+        self.assertFalse(session.finished, "one malformed read must not end the conversation")
+        self.assertEqual(session.probes, 0, "a JSON slip is not an injection attempt")
+
+    def test_an_unparsable_submit_spends_a_round_and_is_eventually_discarded(self):
+        """Otherwise an agent that cannot produce JSON loops until its turn limit."""
+        session = self.session("hunter")
+        outcomes = [session.dispatch(self.bad("submit_hunt")) for _ in range(3)]
+        self.assertEqual([o.outcome.action for o in outcomes],
+                         ["feedback", "feedback", "discard"])
+        self.assertTrue(outcomes[-1].terminal)
+        self.assertIsNone(session.result)
