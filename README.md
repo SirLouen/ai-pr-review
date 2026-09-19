@@ -132,26 +132,41 @@ anything that fails. No job is granted `contents: write` or `id-token: write`.
 | `max-usd` | `1.50` | The run stops rather than cross it |
 | `disclosure` | `auto` | `auto`, `all` or `summary-only` |
 
-Default models: `recon`, `hunter`, `critic` on `deepseek-flash`, `verifier` on
-`deepseek-v4-pro`. The verifier **must** differ from the hunter — it exists to disprove the
-hunter, and shares its blind spots when they are the same model. The action refuses a run
-where they match.
+Default models: every role on `deepseek-flash`, which is DeepSeek-V4.1-Flash. DeepSeek's
+API accepts only `deepseek-flash` and `deepseek-v4-pro` as model ids; the `deepseek/`
+prefix you may see elsewhere is LiteLLM routing syntax, not part of the id.
+
+Verifiers may share the hunters' model. The skill requires a *fresh* verifier that did not
+hunt the candidate, and each verifier is a separate conversation built only from the
+structured candidate, so that holds either way. A different model is an extra hedge against
+a blind spot both share; set `models: verifier=deepseek-v4-pro` to use one. When they match,
+the report says so.
 
 `security/publish`: `pr-number`, `head-sha`, `github-token`, `fail-on`
 (`never` by default), `sarif` (`false` by default).
 
 ### Cost and latency
 
-| | Small PR (~5 files) | Medium PR (~30 files) |
-|---|---|---|
-| Flash hunters + v4-pro verifiers | ≈ $0.40 | ≈ $1.15 |
-| No baseline available (four recon calls) | +$0.25–0.50 | +$0.30–0.60 |
+Measured in the M1 spike against the real API (`scripts/m1_spike.py`), per conversation on
+`deepseek-flash`:
 
-Roughly 5–15 model conversations and 6–15 minutes per pull request. The scheduled baseline
-audit is the expensive one: $2–6 per run, weekly or on push to the default branch. For
-comparison, the general PR-Agent review above costs $0.02–0.04. That gap is the price of
-the skill's evidence bar — every lead is re-derived from source by a second agent — and you
-should decide it is worth paying before enabling this on a busy repository.
+| Role | Cost | Wall clock |
+|---|---|---|
+| Hunter | ≈ $0.012 | ≈ 20 s |
+| Verifier | ≈ $0.013 | ≈ 55–140 s |
+
+A small pull request runs about nine conversations (four reconnaissance, two hunters, the
+critic, two verifiers), so expect roughly **$0.10–0.15**. Reconnaissance and the critic were
+not measured separately and are assumed to cost about what a hunter does. With a baseline
+audit available, reconnaissance drops to one call.
+
+Agents within a phase run concurrently (up to six), and the phases themselves run in order,
+because the skill requires the critic to finish before any verifier starts. A small pull
+request should take a few minutes rather than the fifteen a fully sequential run needed. That
+figure is an estimate until the next spike run measures it.
+
+For comparison, the general PR-Agent review above costs $0.02–0.04. The difference is the
+price of the skill's evidence bar: every lead is re-derived from source by a second agent.
 
 ### Fork pull requests
 

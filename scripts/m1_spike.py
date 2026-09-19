@@ -36,7 +36,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from prreview.security import __main__ as cli                          # noqa: E402
-from prreview.security import gitsrc, orchestrator, prompts, tools     # noqa: E402
+from prreview.security import gitsrc, loop, orchestrator, prompts, tools  # noqa: E402
 from prreview.security import validate as validatemod                  # noqa: E402
 from prreview.security.config import Caps, RunConfig                   # noqa: E402
 from prreview.security.providers.base import CostMeter, ProviderError  # noqa: E402
@@ -185,6 +185,14 @@ def probe_passback(provider, report, model):
     without = _raw(provider, {"model": model, "max_tokens": 2000, "tools": [read],
                               "messages": messages + [dropped, tool_result]})
     has_reasoning = bool(message.get("reasoning_content"))
+    if not has_reasoning:
+        # Nothing was dropped, so "dropped: ok" would prove nothing. The pipeline probes
+        # below still show passback working: every multi-turn conversation depends on it.
+        report.record("passback", None,
+                      summary="inconclusive: the first turn returned no reasoning to drop; "
+                              "see the pipeline probes for passback in real conversations",
+                      with_passback=with_it.get("error", "ok"), reasoning_present=False)
+        return
     report.record("passback", with_it["ok"],
                   summary="with reasoning passed back: %s; dropped: %s (reasoning present: %s)"
                           % ("ok" if with_it["ok"] else "ERROR",
@@ -208,9 +216,11 @@ def probe_reasoning_cap(provider, report, model):
     reasoning = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens", 0)
     content = choice["message"].get("content") or ""
     counts = choice.get("finish_reason") == "length" and not content.strip()
-    report.record("reasoning-cap", not counts,
-                  summary=("max_tokens INCLUDES reasoning: a 64-token cap left no answer, so "
-                           "per-turn caps must budget reasoning" if counts else
+    # Informational: the loop now budgets for this (32k per turn). Whether that is enough
+    # is answered by max_turn_output in the pipeline probes, not here.
+    report.record("reasoning-cap", None,
+                  summary=("max_tokens includes reasoning (known; the per-turn cap is %d)"
+                           % loop._output_cap(Caps(), model) if counts else
                            "answer survived a 64-token cap"),
                   finish_reason=choice.get("finish_reason"), reasoning_tokens=reasoning,
                   completion_tokens=usage.get("completion_tokens"),
@@ -249,9 +259,11 @@ def probe_strict_tools(api_key, report, model):
     body = {"model": model, "max_tokens": 1500, "tools": catalogue,
             "messages": [{"role": "user", "content": "Call list_changed_files."}]}
     got = _raw(beta, body)
-    report.record("strict-tools", got["ok"],
+    # Informational: production sends no strict flag and validates arguments in code.
+    report.record("strict-tools", None,
                   summary=("beta strict mode accepted %d tool schemas" % len(catalogue)
-                           if got["ok"] else "beta strict mode REFUSED the schemas"),
+                           if got["ok"] else "beta strict mode refuses these schemas "
+                                             "(not used; arguments are checked in code)"),
                   error=got.get("error", ""))
 
 
@@ -273,6 +285,7 @@ def probe_pipeline(provider, report, workdir, n_verifiers, n_hunters, max_usd):
         diff = gitsrc.diff_index(repo, base, head, caps=caps)
         changes = orchestrator.routing_changes(repo, base, head, diff)
         parent.plan(diff, changes, len(commits), cli.symbol_resolver(source, diff))
+        wall_started = time.monotonic()
 
         if n_hunters:
             parent.hunt(facts, list(parent.assignments)[:n_hunters])
@@ -285,6 +298,13 @@ def probe_pipeline(provider, report, workdir, n_verifiers, n_hunters, max_usd):
         by_role.setdefault(conversation.role, []).append(conversation)
     _summarise(report, "verifier", by_role.get("verifier", []))
     _summarise(report, "hunter", by_role.get("hunter", []))
+    serial = sum(c.seconds for c in parent.conversations)
+    wall = time.monotonic() - wall_started
+    report.record("parallelism", True,
+                  summary="%.0fs of conversations in %.0fs wall clock (%.1fx) at up to %d at once"
+                          % (serial, wall, serial / max(wall, 0.001),
+                             caps.parallel_conversations),
+                  serial_seconds=round(serial, 1), wall_seconds=round(wall, 1))
     return parent
 
 
@@ -295,9 +315,13 @@ def _summarise(report, role, conversations):
     rows = []
     for c in conversations:
         state = c.state or {}
+        turns = [u.as_dict() for u in c.turn_usage]
         rows.append({"status": c.status, "reason": c.reason[:160], "turns": c.turns,
                      "seconds": round(c.seconds, 1), "rounds": state.get("submit_rounds"),
-                     "tool_calls": state.get("tool_calls"), "usage": c.usage.as_dict()})
+                     "tool_calls": state.get("tool_calls"), "usage": c.usage.as_dict(),
+                     "unparsable_calls": state.get("unparsable_calls", 0),
+                     "max_turn_output": max([t["output"] for t in turns] or [0]),
+                     "first_turn": turns[0] if turns else None})
     n = len(rows)
     ok = [r for r in rows if r["status"] == "ok"]
     first = [r for r in ok if r["rounds"] == 1]
@@ -308,6 +332,18 @@ def _summarise(report, role, conversations):
     seconds = sum(r["seconds"] for r in rows) or 1.0
     first_rate, ok_rate = len(first) / n, len(ok) / n
     passed = first_rate >= FIRST_TRY_TARGET if role == "verifier" else ok_rate >= 0.8
+
+    # Headroom: the largest single turn against the per-turn output cap. Reasoning counts
+    # toward it, so a turn near the cap is one long thought away from an empty answer.
+    cap = loop._output_cap(Caps(), "deepseek-flash")
+    max_turn = max(r["max_turn_output"] for r in rows)
+    # Shared-prefix caching: agents after the first should find the prompt warm. Order is
+    # job order, so "after the first" is well defined even though they ran concurrently.
+    later = [r["first_turn"] for r in rows[1:] if r["first_turn"]]
+    later_hit = sum(t["cache_hit"] for t in later)
+    later_all = later_hit + sum(t["cache_miss"] for t in later)
+    unparsable = sum(r["unparsable_calls"] for r in rows)
+    recovered = sum(1 for r in rows if r["unparsable_calls"] and r["status"] == "ok")
     report.record(role, passed,
                   summary="%d runs: first-try %.0f%%, valid within feedback %.0f%%, "
                           "avg %.1f turns, %.0f out-tok/s, cache hit %.0f%%"
@@ -315,7 +351,17 @@ def _summarise(report, role, conversations):
                              sum(r["turns"] for r in rows) / n, out / seconds,
                              100 * hit / max(1, hit + miss)),
                   first_try_rate=round(first_rate, 3), within_feedback_rate=round(ok_rate, 3),
-                  reasoning_share=round(reasoning / max(1, out), 3), runs=rows)
+                  reasoning_share=round(reasoning / max(1, out), 3),
+                  max_turn_output=max_turn, output_cap=cap,
+                  headroom=round(1 - max_turn / cap, 3),
+                  first_turn_cache_hit_after_first=(round(later_hit / later_all, 3)
+                                                    if later_all else None),
+                  unparsable_calls=unparsable, conversations_recovered=recovered, runs=rows)
+    print("      largest single turn %d of %d tokens (%.0f%% headroom); later agents' first "
+          "turn %s cached; %d unparsable call(s), %d conversation(s) recovered"
+          % (max_turn, cap, 100 * (1 - max_turn / cap),
+             "%.0f%%" % (100 * later_hit / later_all) if later_all else "n/a",
+             unparsable, recovered), flush=True)
 
 
 # ------------------------------------------------------------------------ decision
@@ -336,6 +382,26 @@ def decide(report):
             "only %.0f%% of verifier records validate even with feedback; consider a Claude "
             "verifier (the adapter is milestone M8) or a smaller submit contract"
             % (100 * within))
+
+
+def concerns(report):
+    """Borderline results that do not change the verdict but should be looked at."""
+    out = []
+    for role in ("verifier", "hunter"):
+        probe = report.probes.get(role) or {}
+        headroom = probe.get("headroom")
+        if headroom is not None and headroom < 0.25:
+            out.append("%s: largest turn used %.0f%% of the per-turn output cap; a longer "
+                       "thought would truncate the answer" % (role, 100 * (1 - headroom)))
+        hit = probe.get("first_turn_cache_hit_after_first")
+        if hit is not None and hit < 0.5:
+            out.append("%s: later agents' first turn only %.0f%% cached; the shared prompt "
+                       "prefix is not being reused" % (role, 100 * hit))
+        missing = (probe.get("unparsable_calls") or 0) and not probe.get(
+            "conversations_recovered")
+        if missing:
+            out.append("%s: unparsable tool calls were not recovered" % role)
+    return out
 
 
 def main(argv=None, provider=None):
@@ -376,7 +442,8 @@ def main(argv=None, provider=None):
                                 args.max_usd)
 
     verdict, why = decide(report)
-    result = {"verdict": verdict, "reason": why, "probes": report.probes,
+    watch = concerns(report)
+    result = {"verdict": verdict, "reason": why, "watch": watch, "probes": report.probes,
               "usd_spent_pipeline": round(parent.meter.spent, 4),
               "usd_by_role": {k: round(v, 4) for k, v in parent.meter.by_role.items()},
               "seconds": round(time.monotonic() - started, 1),
@@ -384,6 +451,8 @@ def main(argv=None, provider=None):
     with open(os.path.join(args.out, "report.json"), "w", encoding="utf-8") as handle:
         json.dump(result, handle, indent=1, sort_keys=True)
     print("\n%s: %s" % (verdict, why))
+    for item in watch:
+        print("  watch: %s" % item)
     print("pipeline spend $%.4f; report and %d cassettes in %s"
           % (parent.meter.spent, recorder.misses, args.out))
     return 0 if verdict != "NO-GO" else 1

@@ -102,3 +102,24 @@ class Decision(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Concerns(unittest.TestCase):
+    """Borderline results are surfaced even when the verdict is GO."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.spike = load_spike()
+
+    def test_thin_headroom_and_a_cold_cache_are_flagged(self):
+        report = self.spike.Report()
+        report.probes["verifier"] = {"headroom": 0.1, "first_turn_cache_hit_after_first": 0.2,
+                                     "unparsable_calls": 1, "conversations_recovered": 0}
+        found = self.spike.concerns(report)
+        self.assertEqual(len(found), 3, found)
+
+    def test_healthy_numbers_raise_nothing(self):
+        report = self.spike.Report()
+        report.probes["verifier"] = {"headroom": 0.6, "first_turn_cache_hit_after_first": 0.9,
+                                     "unparsable_calls": 1, "conversations_recovered": 1}
+        self.assertEqual(self.spike.concerns(report), [])

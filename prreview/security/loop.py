@@ -35,10 +35,10 @@ class ConversationResult:
     """What the orchestrator gets back from one agent."""
 
     __slots__ = ("role", "agent_id", "status", "reason", "result", "usage", "turns",
-                 "seconds", "state", "messages")
+                 "seconds", "state", "messages", "turn_usage")
 
     def __init__(self, role, agent_id, status, reason="", result=None, usage=None,
-                 turns=0, seconds=0.0, state=None, messages=None):
+                 turns=0, seconds=0.0, state=None, messages=None, turn_usage=None):
         self.role = role
         self.agent_id = agent_id
         self.status = status
@@ -49,6 +49,10 @@ class ConversationResult:
         self.seconds = seconds
         self.state = state or {}
         self.messages = messages or []
+        # Per request, in order. Totals hide the two numbers that matter operationally:
+        # the largest single turn (against the per-turn output cap) and whether the first
+        # turn was served from a cache another agent warmed.
+        self.turn_usage = list(turn_usage or [])
 
     @property
     def ok(self):
@@ -58,7 +62,7 @@ class ConversationResult:
         return {"role": self.role, "agent_id": self.agent_id, "status": self.status,
                 "reason": self.reason, "turns": self.turns,
                 "seconds": round(self.seconds, 1), "usage": self.usage.as_dict(),
-                "state": self.state}
+                "turn_usage": [u.as_dict() for u in self.turn_usage], "state": self.state}
 
 
 def run_conversation(provider, role, model, system, user, session, meter=None, caps=None,
@@ -83,6 +87,7 @@ def run_conversation(provider, role, model, system, user, session, meter=None, c
     started = clock()
     deadline = started + caps.conversation_deadline_s
     total = Usage()
+    per_turn = []
     turns = 0
     warned = False
 
@@ -90,7 +95,7 @@ def run_conversation(provider, role, model, system, user, session, meter=None, c
         return ConversationResult(role, session.agent_id, status, reason,
                                   result=session.result, usage=total, turns=turns,
                                   seconds=clock() - started, state=session.state(),
-                                  messages=messages)
+                                  messages=messages, turn_usage=per_turn)
 
     while True:
         if turns >= max_turns:
@@ -124,6 +129,7 @@ def run_conversation(provider, role, model, system, user, session, meter=None, c
             return done(FAILED, str(error))
         turns += 1
         total = total.add(response.usage)
+        per_turn.append(response.usage)
         if ticket is not None:
             meter.settle(ticket, response.usage)
         messages.append(_assistant_message(response))

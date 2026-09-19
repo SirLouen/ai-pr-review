@@ -977,6 +977,7 @@ class ToolSession:
         self.calls = 0
         self.rounds = 0
         self.probes = 0
+        self.parse_errors = 0
         self.blocked = False
         self.block_reason = ""
         self.finished = False
@@ -1036,6 +1037,7 @@ class ToolSession:
                                                                   [self.submit_tool])))
         parse_error = getattr(call, "error", "")
         if parse_error:
+            self.parse_errors += 1
             message = ("your %s call could not be read: %s. Resend it with every string "
                        "value in double quotes, including globs and patterns."
                        % (safe_path(name, 60), safe_text(parse_error, 160)))
@@ -1512,6 +1514,7 @@ class ToolSession:
             "blocked": self.blocked,
             "block_reason": self.block_reason,
             "suspected_injection_attempts": self.probes,
+            "unparsable_calls": self.parse_errors,
             "submit_rounds": self.rounds,
             "reviewed_paths": self.read_log.paths(),
             "read": self.read_log.summary(),
