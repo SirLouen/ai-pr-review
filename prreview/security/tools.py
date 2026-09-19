@@ -537,8 +537,11 @@ class Omission:
         return (self.kind, self.path, self.ref, self.detail)
 
     def as_dict(self):
-        return {"kind": self.kind, "path": self.path, "ref": self.ref,
-                "reason": self.reason, "detail": self.detail}
+        out = {"kind": self.kind, "path": self.path, "ref": self.ref,
+               "reason": self.reason, "detail": self.detail}
+        if self.span:
+            out["span"] = list(self.span)
+        return out
 
     def __repr__(self):
         return "Omission(%s, %s)" % (self.kind, safe_text(self.path, 40))

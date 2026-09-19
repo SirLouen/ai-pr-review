@@ -71,6 +71,41 @@ class Job:
         self.max_turns = max_turns
 
 
+def lines_read(conversations):
+    """(ref, path) -> merged [start, end] ranges read by any conversation in the run."""
+    ranges = {}
+    for conversation in conversations:
+        by_ref = ((conversation.state or {}).get("read") or {}).get("by_ref") or {}
+        for ref, paths in by_ref.items():
+            for path, pairs in (paths or {}).items():
+                ranges.setdefault((ref, path), []).extend(
+                    (int(low), int(high)) for low, high in pairs or ())
+    merged = {}
+    for key, pairs in ranges.items():
+        out = []
+        for low, high in sorted(pairs):
+            if out and low <= out[-1][1] + 1:
+                out[-1][1] = max(out[-1][1], high)
+            else:
+                out.append([low, high])
+        merged[key] = out
+    return merged
+
+
+def _span_read(item, read):
+    """A truncated read is no gap in the RUN when some conversation read those lines.
+
+    One recon agent on gpx-route-map#21 stopped short of lines 520-559 while six others
+    read the whole file, and the report still listed it under "Not reviewed".
+    """
+    span = item.get("span")
+    if not span or len(span) != 2:
+        return False
+    start, end = span
+    return any(low <= start and end <= high
+               for low, high in read.get((item.get("ref"), item.get("path")), ()))
+
+
 class Orchestrator:
     def __init__(self, cfg, provider, validator, source, skill, clock=time.monotonic,
                  progress=None):
@@ -436,11 +471,12 @@ class Orchestrator:
         """
         seen = set()
         collected = []
+        read = lines_read(self.conversations)
         for conversation in self.conversations:
             for item in (conversation.state or {}).get("omitted") or ():
                 key = (item.get("kind"), item.get("path"), item.get("ref"),
                        item.get("detail"))
-                if key in seen:
+                if key in seen or _span_read(item, read):
                     continue
                 seen.add(key)
                 collected.append(dict(item))

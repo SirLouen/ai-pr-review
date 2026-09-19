@@ -219,6 +219,25 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual([o["kind"] for o in collected], ["oversize", "tool_budget_exhausted"],
                          "each gap once, in the order it was first seen")
 
+    def test_a_truncated_read_another_agent_covered_is_not_a_gap_in_the_run(self):
+        """gpx-route-map#21: recon-2 stopped short of 520-559; six others read it all."""
+        parent, _, _ = self.build()
+        gap = {"kind": "read_truncated", "path": "a.php", "ref": "head",
+               "reason": "lines 120-560 were requested; 120-519 were returned",
+               "detail": "next_line=520", "span": [520, 560]}
+        short = {"omitted": [gap], "read": {"by_ref": {"head": {"a.php": [[120, 519]]}}}}
+        # Two agents whose reads only together cover the span; one at the other ref.
+        halves = [{"read": {"by_ref": {"head": {"a.php": [[500, 540]]}}}},
+                  {"read": {"by_ref": {"head": {"a.php": [[541, 600]]}}}}]
+        other_ref = {"read": {"by_ref": {"base": {"a.php": [[1, 900]]}}}}
+        for state in (short, other_ref):
+            parent.conversations.append(type("R", (), {"state": state})())
+        self.assertEqual([o["kind"] for o in parent.omissions()], ["read_truncated"],
+                         "a read at the other ref closes nothing")
+        for state in halves:
+            parent.conversations.append(type("R", (), {"state": state})())
+        self.assertEqual(parent.omissions(), [])
+
     def test_deviation_register_is_written_not_implied(self):
         parent, _, _ = self.build()
         parent.deviate("delta reconnaissance", "baseline available")
