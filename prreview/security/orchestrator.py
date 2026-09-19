@@ -23,7 +23,7 @@ import dataclasses
 import json
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import config, gitsrc
 from . import ledger as ledgermod
@@ -68,8 +68,13 @@ class Job:
 
 
 class Orchestrator:
-    def __init__(self, cfg, provider, validator, source, skill, clock=time.monotonic):
+    def __init__(self, cfg, provider, validator, source, skill, clock=time.monotonic,
+                 progress=None):
         self.cfg = cfg
+        # One line per phase and per finished agent. Deliberately content-free -- roles,
+        # statuses, counts, times -- because in CI this is an Actions log, public on a
+        # public repository. Silent by default so library use and tests stay quiet.
+        self.progress = progress or (lambda message: None)
         self.provider = provider
         self.validator = validator
         self.source = source              # tools.RepoSource: what the model may read
@@ -141,11 +146,18 @@ class Orchestrator:
         if workers > 1:
             self._warm(jobs[0])
         if workers == 1:
-            results = [self._converse(job) for job in jobs]
+            results = []
+            for job in jobs:
+                results.append(self._converse(job))
+                self._report(results[-1])
         else:
             with ThreadPoolExecutor(max_workers=workers,
                                     thread_name_prefix="agent") as executor:
                 futures = [executor.submit(self._converse, job) for job in jobs]
+                # Reported as each finishes, so a long wave visibly advances; recorded
+                # below in job order all the same.
+                for future in as_completed(futures):
+                    self._report(future.result())
                 results = [future.result() for future in futures]
         # Recorded in job order, not completion order, so run-metadata and the report do
         # not depend on which request the provider happened to answer first.
@@ -156,6 +168,10 @@ class Orchestrator:
                                   % (result.role, result.agent_id, result.status,
                                      result.reason))
         return results
+
+    def _report(self, result):
+        self.progress("  %-11s %-15s %2d turns  %4.0fs"
+                      % (result.agent_id, result.status, result.turns, result.seconds))
 
     def _warm(self, job):
         """Fill the provider's prompt cache before a concurrent wave. Best effort only.
@@ -258,6 +274,7 @@ class Orchestrator:
                             self.session_for("recon", identifier)))
         # The recon agents map different aspects of one repository and read nothing
         # from each other, so they run together (RECONNAISSANCE.md:9-55).
+        self.progress("reconnaissance: %d agent(s)" % len(jobs))
         return [r for r in self.run_agents(jobs) if r.ok]
 
     def architecture_from(self, results, baseline=None):
@@ -317,6 +334,8 @@ class Orchestrator:
             jobs.append(Job("hunter", number, prompt.system, prompt.user, session))
             launched.append(assignment)
         # One wave, run together: hunters own disjoint units and never see each other.
+        self.progress("hunting: %d agent(s) over %d coverage unit(s)"
+                      % (len(jobs), sum(len(a.coverage_ids) for a in launched)))
         results = []
         for assignment, result in zip(launched, self.run_agents(jobs)):
             if result.ok:
@@ -339,6 +358,7 @@ class Orchestrator:
                                        candidates=candidates, architecture=architecture,
                                        pack=self.skill,
                                        submit_tool=tools.SUBMIT_TOOLS["critic"])
+        self.progress("coverage critic")
         result = self.run_agent("critic", 1, prompt.system, prompt.user, session)
         if not result.ok:
             self.incomplete(REASON_CRITIC, "the coverage critic did not complete, so the "
@@ -373,6 +393,7 @@ class Orchestrator:
             fingerprints.append(fingerprint)
         # Concurrency does not weaken independence: each verifier is its own conversation
         # built from its own candidate, and none can see another's messages or verdict.
+        self.progress("verification: %d candidate(s)" % len(jobs))
         verified = []
         for fingerprint, result in zip(fingerprints, self.run_agents(jobs)):
             if result.ok and result.result:

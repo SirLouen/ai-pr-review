@@ -28,6 +28,11 @@ DEADLINE = "deadline"
 FAILED = "provider_failed"
 
 FINALIZE_TURNS = 2          # turns reserved so an agent can still submit after a warning
+
+TURNS_NOTICE = ("You have %d turns left in this conversation. Stop exploring and call %s now "
+                "with what you have established. Record anything you could not finish as "
+                "unresolved rather than leaving it out: an unfinished result is kept, while no "
+                "result is discarded.")
 CONTEXT_HEADROOM = 0.90     # of the model's per-conversation context cap
 
 
@@ -90,6 +95,7 @@ def run_conversation(provider, role, model, system, user, session, meter=None, c
     per_turn = []
     turns = 0
     warned = False
+    turn_warned = False
 
     def done(status, reason=""):
         return ConversationResult(role, session.agent_id, status, reason,
@@ -100,6 +106,13 @@ def run_conversation(provider, role, model, system, user, session, meter=None, c
     while True:
         if turns >= max_turns:
             return done(NO_SUBMIT, "reached the %d-turn limit without submitting" % max_turns)
+        if not turn_warned and turns >= max_turns - FINALIZE_TURNS:
+            # Without this the agent is never told its budget is ending: on the first real
+            # pull request two of four recon agents explored until turn 30 and were cut
+            # off, discarding the most expensive work in the run.
+            turn_warned = True
+            messages.append({"role": "user",
+                             "content": TURNS_NOTICE % (max_turns - turns, session.submit_tool)})
         if clock() > deadline:
             return done(DEADLINE, "exceeded the %ds conversation deadline"
                         % caps.conversation_deadline_s)
@@ -109,6 +122,7 @@ def run_conversation(provider, role, model, system, user, session, meter=None, c
             # Truncating history would drop the read evidence a verifier's citations are
             # checked against, so the agent is asked to finish with what it has instead.
             warned = True
+            turn_warned = True      # this notice already says to finish; one is enough
             max_turns = min(max_turns, turns + FINALIZE_TURNS)
             messages.append({"role": "user", "content": toolsmod.FINALIZE_NOTICE})
             continue

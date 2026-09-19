@@ -80,6 +80,8 @@ class Parent(orchestrator.Orchestrator):
         self.clock = time.monotonic
         self.conversations = []
         self.notes = []
+        self.reported = []
+        self.progress = self.reported.append
 
 
 def jobs(caps, n):
@@ -97,6 +99,14 @@ class RunsInParallel(unittest.TestCase):
         self.assertEqual(provider.peak, 4, "concurrency must reach, and not exceed, the cap")
         # Eight 50ms agents four at a time is about two rounds, not eight.
         self.assertLess(elapsed, 8 * 0.05 * 0.75)
+
+    def test_every_agent_is_reported_as_it_finishes(self):
+        """A five-minute run with no output looked hung on the first real pull request."""
+        caps = Caps(parallel_conversations=4)
+        parent = Parent(SlowProvider({}), caps)
+        parent.run_agents(jobs(caps, 3))
+        self.assertEqual(len(parent.reported), 3)
+        self.assertTrue(all("ok" in line for line in parent.reported))
 
     def test_a_cap_of_one_is_sequential(self):
         caps = Caps(parallel_conversations=1)

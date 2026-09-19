@@ -673,6 +673,12 @@ def _baseline(source, provenance, scratch, notes):
     return baseline
 
 
+def progress(message):
+    """Progress to stderr, one line at a time. Counts, statuses and times only."""
+    sys.stderr.write("[security-review] %s\n" % message)
+    sys.stderr.flush()
+
+
 def drive(cfg, creds, services, writer, recon_calls=4):
     """P0..P5. Returns (parent, report inputs). Raises RunAborted or whatever broke."""
     validator = validatemod.Validator(cfg.vendor_dir, node=services.node)
@@ -685,6 +691,7 @@ def drive(cfg, creds, services, writer, recon_calls=4):
                              facts_pr["deletions"])
     merge_base = facts_pr["merge_base"]
 
+    progress("fetching %s @ %s" % (cfg.repository, cfg.head_sha[:12]))
     repo = gitsrc.open_repo(os.path.join(cfg.out_dir, "scratch"), caps=cfg.caps)
     gitsrc.fetch_pr(repo, services.remote(cfg), cfg.head_sha, merge_base,
                     facts_pr["commits"], token=services.token,
@@ -715,13 +722,16 @@ def drive(cfg, creds, services, writer, recon_calls=4):
         recon_calls = 1
 
     provider = services.provider(cfg, creds)
-    parent = orchestrator.Orchestrator(cfg, provider, validator, source, skill)
+    parent = orchestrator.Orchestrator(cfg, provider, validator, source, skill,
+                                       progress=progress)
     writer.parent = parent
     writer.prior = prior
     facts = prompts.RunFacts.from_config(cfg, skill_commit=skill.commit,
                                          commit_count=len(commits))
     parent.plan(diff, changes, len(commits), symbol_resolver(source, diff),
                 prior=prior.unit_status(), recon_calls=recon_calls)
+    progress("planned %d coverage unit(s) over %d changed file(s); %d hunter(s)"
+             % (len(parent.ledger.units), len(changes), len(parent.assignments)))
 
     changed_paths = source.changed_paths()
     recon_results = parent.recon(facts, architecture=architecture, changed_paths=changed_paths)
@@ -874,6 +884,12 @@ def cmd_analyze(args, env, services=None, profile="quick", scope="diff", recon_c
     if status != EXIT_OK:
         reason = writer.reason or (writer.parent.reason if writer.parent else "")
         sys.stderr.write("::warning::incomplete run: %s\n" % (reason or "unrecorded"))
+    parent = writer.parent
+    if parent is not None:
+        progress("done: %s, %d conversation(s), $%.4f, %.0fs; bundle in %s"
+                 % (parent.status, parent.spent(), parent.meter.spent,
+                    parent.clock() - parent.started,
+                    os.path.join(cfg.out_dir, BUNDLE)))
     return status
 
 

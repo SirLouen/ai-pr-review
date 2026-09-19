@@ -168,6 +168,38 @@ class MalformedCalls(unittest.TestCase):
         self.assertIs(seen["strict"], False)
 
 
+class TurnBudget(unittest.TestCase):
+    """First real pull request: two recon agents explored to turn 30 and were discarded."""
+
+    def explorer(self, n, then_submit=False):
+        replies = [Response(tool_calls=[call("read_file", path="a.py")], usage=usage(),
+                            finish_reason="tool_calls") for _ in range(n)]
+        if then_submit:
+            replies.append(Response(tool_calls=[call("submit_hunt")], usage=usage(),
+                                    finish_reason="tool_calls"))
+        return ScriptedProvider(replies)
+
+    def test_the_agent_is_told_before_its_turns_run_out(self):
+        provider = self.explorer(5, then_submit=True)
+        result = run(provider, FakeSession(), max_turns=6)
+        self.assertTrue(result.ok, "warned in time, the agent submits instead of being cut off")
+        notices = [m["content"] for r in provider.requests for m in r["messages"]
+                   if m["role"] == "user" and "turns left" in m["content"]]
+        self.assertTrue(notices)
+        self.assertIn("submit_hunt", notices[0])
+
+    def test_the_notice_comes_once(self):
+        provider = self.explorer(8)
+        run(provider, FakeSession(), max_turns=8)
+        last = provider.requests[-1]["messages"]
+        self.assertEqual(sum(1 for m in last if m["role"] == "user"
+                             and "turns left" in m["content"]), 1)
+
+    def test_an_agent_that_still_does_not_submit_ends_as_before(self):
+        result = run(self.explorer(10), FakeSession(), max_turns=6)
+        self.assertEqual(result.status, loop.NO_SUBMIT)
+
+
 class Failures(unittest.TestCase):
     def test_discard_is_not_reported_as_success(self):
         """A discarded submit finishes the session but leaves no result."""
