@@ -610,3 +610,27 @@ class TestDefinitionSpan(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CostCeiling(unittest.TestCase):
+    """gophenberg#225: hunters opened at 102k tokens because the pack filled the window."""
+
+    def test_a_role_ceiling_caps_the_pack_below_the_window(self):
+        caps = Caps()
+        hunter = p.budget_for(caps, "deepseek-flash", role="hunter")
+        verifier = p.budget_for(caps, "deepseek-flash", role="verifier")
+        self.assertLessEqual(hunter.total_bytes, caps.pack_tokens["hunter"] * p.BYTES_PER_TOKEN)
+        self.assertLessEqual(verifier.total_bytes,
+                             caps.pack_tokens["verifier"] * p.BYTES_PER_TOKEN)
+
+    def test_without_the_ceiling_a_large_window_fills_the_pack(self):
+        """The control: on a 1M-token model the window alone allows ~125k tokens."""
+        caps = Caps()
+        self.assertGreater(p.budget_for(caps, "deepseek-flash").total_bytes,
+                           5 * p.budget_for(caps, "deepseek-flash", role="hunter").total_bytes)
+
+    def test_a_small_window_still_binds_first(self):
+        """The ceiling only ever lowers the budget; a smaller context still wins."""
+        caps = Caps(context_fraction=0.02)
+        tight = p.budget_for(caps, "deepseek-flash", role="hunter")
+        self.assertLess(tight.total_bytes, caps.pack_tokens["hunter"] * p.BYTES_PER_TOKEN)

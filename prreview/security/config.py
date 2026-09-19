@@ -72,6 +72,12 @@ class Caps:
     # turn 30 were the most expensive in the run, because every turn re-sends the whole
     # history. Two turns before the limit the loop tells an agent to submit what it has.
     max_turns = {"recon": 20, "hunter": 26, "critic": 20, "verifier": 25}
+    # Cost ceilings on the warm-start pack, in tokens. The pack was sized from the context
+    # window alone, and on a 1M-token model that meant up to ~125k tokens of source in every
+    # hunter's first message: on gophenberg#225 hunters opened at 102k tokens and the
+    # verifier at 80k, the largest single cost in the run. The pack is a warm start; agents
+    # open anything beyond it with windowed read_file calls, and what it leaves out is listed.
+    pack_tokens = {"hunter": 24_000, "verifier": 16_000}
     blob_bytes: int = 2 * 1024 * 1024
     read_lines: int = 400
     read_bytes: int = 40_000

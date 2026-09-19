@@ -210,7 +210,10 @@ def _output_cap(caps, model):
     gets an empty answer and the conversation fails. Only tokens actually produced are
     billed, so the higher ceiling costs nothing on the turns that do not need it.
     """
-    return min(32_000, max(8_000, caps.context_tokens(model) // 8))
+    # gophenberg#225: a verifier spent 24,974 tokens on one turn against a limit that was
+    # really context // 8 = 31,250, not the 32k it appeared to be. Headroom is free: only
+    # the tokens a turn actually produces are billed.
+    return min(48_000, max(8_000, caps.context_tokens(model) // 5))
 
 
 def _json(value):

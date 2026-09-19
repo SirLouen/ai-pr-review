@@ -176,6 +176,9 @@ def budget_for(caps, model, skill_tokens=0, skill=None, block_names=(),
     tool_reserve = int(context * TOOL_RESERVE_FRACTION)
     left = context - int(skill_tokens) - int(scaffold_tokens) - tool_reserve
     left = min(left, int(context * PACK_CEILING_FRACTION))
+    ceiling = getattr(caps, "pack_tokens", {}).get(role)
+    if ceiling:
+        left = min(left, int(ceiling))
     total = max(MIN_PACK_BYTES, int(max(0, left) * BYTES_PER_TOKEN))
     per_entry = max(MIN_ENTRY_BYTES, int(total * PER_ENTRY_FRACTION))
     return Budget(total_bytes=total, per_entry_bytes=per_entry, context_tokens=context,

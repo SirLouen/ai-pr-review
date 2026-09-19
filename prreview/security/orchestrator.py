@@ -490,7 +490,7 @@ class Orchestrator:
 
     def pack_budget(self, role):
         model = self.cfg.models[role]
-        return pack.budget_for(self.cfg.caps, model, skill=self.skill)
+        return pack.budget_for(self.cfg.caps, model, skill=self.skill, role=role)
 
     def peer_ids(self, assignments, mine):
         ids = []
