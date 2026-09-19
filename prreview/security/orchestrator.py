@@ -22,6 +22,7 @@ confirmed, because nothing in this action executes the code under review.
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from . import config, gitsrc
 from . import ledger as ledgermod
@@ -49,6 +50,20 @@ class RunAborted(Exception):
         super().__init__(detail or reason)
         self.reason = reason
         self.detail = detail
+
+
+class Job:
+    """One agent to run: what it is told, and the tool session that is its only surface."""
+
+    __slots__ = ("role", "index", "system", "user", "session", "max_turns")
+
+    def __init__(self, role, index, system, user, session, max_turns=None):
+        self.role = role
+        self.index = index
+        self.system = system
+        self.user = user
+        self.session = session
+        self.max_turns = max_turns
 
 
 class Orchestrator:
@@ -108,15 +123,42 @@ class Orchestrator:
 
     def run_agent(self, role, index, system, user, session, max_turns=None):
         """One agent. Every stop condition is recorded, never silently swallowed."""
-        result = loop.run_conversation(self.provider, role, self.cfg.models[role],
-                                       system, user, session, meter=self.meter,
-                                       caps=self.cfg.caps, max_turns=max_turns,
-                                       clock=self.clock)
-        self.conversations.append(result)
-        if not result.ok:
-            self.notes.append("%s %s ended as %s: %s"
-                              % (role, result.agent_id, result.status, result.reason))
-        return result
+        return self.run_agents([Job(role, index, system, user, session, max_turns)])[0]
+
+    def run_agents(self, jobs):
+        """Run independent agents concurrently; return their results in job order.
+
+        Only thread-safe objects are touched inside a conversation: the provider, the
+        cost meter (which reserves before each request so the ceiling holds under
+        concurrency), the validator bridge (one request in flight at a time) and a
+        tool session that belongs to that agent alone. Everything that reads the
+        shared pack and tree-index caches happens beforehand, in the caller.
+        """
+        if not jobs:
+            return []
+        workers = max(1, min(self.cfg.caps.parallel_conversations, len(jobs)))
+        if workers == 1:
+            results = [self._converse(job) for job in jobs]
+        else:
+            with ThreadPoolExecutor(max_workers=workers,
+                                    thread_name_prefix="agent") as executor:
+                futures = [executor.submit(self._converse, job) for job in jobs]
+                results = [future.result() for future in futures]
+        # Recorded in job order, not completion order, so run-metadata and the report do
+        # not depend on which request the provider happened to answer first.
+        for result in results:
+            self.conversations.append(result)
+            if not result.ok:
+                self.notes.append("%s %s ended as %s: %s"
+                                  % (result.role, result.agent_id, result.status,
+                                     result.reason))
+        return results
+
+    def _converse(self, job):
+        return loop.run_conversation(self.provider, job.role, self.cfg.models[job.role],
+                                     job.system, job.user, job.session, meter=self.meter,
+                                     caps=self.cfg.caps, max_turns=job.max_turns,
+                                     clock=self.clock)
 
     def session_for(self, role, agent_id, expected=None, offered=None):
         return tools.ToolSession(self.source, framer=self.framer, role=role,
@@ -170,24 +212,28 @@ class Orchestrator:
             agents = ("1c",)
         else:
             agents = prompts.RECON_AGENTS
-        results = []
-        for number, agent in enumerate(agents):
-            identifier = ledgermod.agent_id("recon", number + 1)
-            session = self.session_for("recon", identifier)
+        jobs = []
+        for number, agent in enumerate(agents, start=1):
+            identifier = ledgermod.agent_id("recon", number)
             prompt = prompts.recon_prompt(facts, self.framer, identifier, agent=agent,
                                           changed_paths=list(changed_paths),
                                           architecture=architecture,
                                           pack=self.skill,
                                           submit_tool=tools.SUBMIT_TOOLS["recon"])
-            results.append(self.run_agent("recon", number + 1, prompt.system, prompt.user,
-                                          session))
-        return [r for r in results if r.ok]
+            jobs.append(Job("recon", number, prompt.system, prompt.user,
+                            self.session_for("recon", identifier)))
+        # The recon agents map different aspects of one repository and read nothing
+        # from each other, so they run together (RECONNAISSANCE.md:9-55).
+        return [r for r in self.run_agents(jobs) if r.ok]
 
     def hunt(self, facts, assignments, architecture=None, secret_facts=(), drafts=()):
         """P2: exactly one hunter wave (SKILL.md:111)."""
-        results = []
+        jobs, launched = [], []
         for number, assignment in enumerate(assignments, start=1):
-            if self.out_of_time() or self.remaining_conversations() <= self.reserved():
+            # Jobs are counted before they run, so the critic and verifier reserve holds
+            # while the whole wave is in flight.
+            if self.out_of_time() or \
+                    self.remaining_conversations() - len(jobs) <= self.reserved():
                 self.ledger_defer(assignment, REASON_NO_RESERVE)
                 continue
             identifier = assignment.agent_id or ledgermod.agent_id("hunter", number)
@@ -210,7 +256,11 @@ class Orchestrator:
                 secret_facts=secret_facts, seeder_drafts=drafts,
                 context_pack=pack.render(context, self.framer), pack=self.skill,
                 submit_tool=tools.SUBMIT_TOOLS["hunter"])
-            result = self.run_agent("hunter", number, prompt.system, prompt.user, session)
+            jobs.append(Job("hunter", number, prompt.system, prompt.user, session))
+            launched.append(assignment)
+        # One wave, run together: hunters own disjoint units and never see each other.
+        results = []
+        for assignment, result in zip(launched, self.run_agents(jobs)):
             if result.ok:
                 results.append((assignment, result))
             else:
@@ -244,9 +294,9 @@ class Orchestrator:
         structured candidate: no hunter reasoning, and no other verifier's conclusion
         (VALIDATION-AND-REPORTING.md:5-7). Independence is structural here, not asked for.
         """
-        verified = []
+        jobs, fingerprints = [], []
         for number, candidate in enumerate(candidates, start=1):
-            if self.out_of_time() or self.remaining_conversations() <= 0:
+            if self.out_of_time() or self.remaining_conversations() - len(jobs) <= 0:
                 self.unvalidated.append(candidate.get("fingerprint", ""))
                 continue
             identifier = ledgermod.agent_id("verifier", number)
@@ -260,7 +310,12 @@ class Orchestrator:
                 architecture=architecture, assigned_fingerprint=fingerprint,
                 context_pack=pack.render(context, self.framer), pack=self.skill,
                 submit_tool=tools.SUBMIT_TOOLS["verifier"])
-            result = self.run_agent("verifier", number, prompt.system, prompt.user, session)
+            jobs.append(Job("verifier", number, prompt.system, prompt.user, session))
+            fingerprints.append(fingerprint)
+        # Concurrency does not weaken independence: each verifier is its own conversation
+        # built from its own candidate, and none can see another's messages or verdict.
+        verified = []
+        for fingerprint, result in zip(fingerprints, self.run_agents(jobs)):
             if result.ok and result.result:
                 verified.extend(result.result.get("records") or [])
             else:

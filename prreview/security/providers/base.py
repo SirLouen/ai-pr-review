@@ -6,6 +6,7 @@ DeepSeek and Claude by changing one model name.
 """
 import hashlib
 import json
+import threading
 
 from .. import config
 
@@ -82,7 +83,12 @@ class CostMeter:
     def __init__(self, max_usd):
         self.max_usd = max_usd
         self.spent = 0.0
+        # Worst-case cost of requests already sent and not yet answered. With agents
+        # running concurrently, checking `spent` alone would let several requests each
+        # pass against the same headroom and cross the ceiling together.
+        self.reserved = 0.0
         self.by_role = {}
+        self._lock = threading.Lock()
 
     def price(self, model):
         return config.PRICES.get(model)
@@ -94,20 +100,46 @@ class CostMeter:
         # Output only: reasoning is already inside it. Adding the two overstated the M1
         # spike's spend by half ($0.71 reported, $0.47 actual) and tripped max-usd early.
         cost = price.usd(usage.cache_miss, usage.cache_hit, usage.output)
-        self.spent += cost
-        self.by_role[role] = self.by_role.get(role, 0.0) + cost
+        with self._lock:
+            self.spent += cost
+            self.by_role[role] = self.by_role.get(role, 0.0) + cost
         return cost
 
-    def check(self, role, model, projected_input_tokens, max_output_tokens):
-        """Raise before sending if the worst case for this call crosses the cap."""
+    def reserve(self, role, model, projected_input_tokens, max_output_tokens):
+        """Hold the worst case for one request before it is sent, or raise.
+
+        Returns a ticket for settle() or release(). The reservation is what keeps the
+        ceiling hard under concurrency: each request is admitted against what is spent
+        plus what every in-flight request might still cost.
+        """
         price = self.price(model)
-        if price is None:
-            return
-        worst = price.usd(projected_input_tokens, 0, max_output_tokens)
-        if self.spent + worst > self.max_usd:
-            raise BudgetExceeded(
-                "%s call would reach $%.2f of the $%.2f ceiling (spent $%.2f)"
-                % (role, self.spent + worst, self.max_usd, self.spent))
+        worst = 0.0 if price is None else price.usd(projected_input_tokens, 0,
+                                                    max_output_tokens)
+        with self._lock:
+            committed = self.spent + self.reserved
+            if committed + worst > self.max_usd:
+                raise BudgetExceeded(
+                    "%s call would reach $%.2f of the $%.2f ceiling (spent $%.2f, $%.2f "
+                    "in flight)" % (role, committed + worst, self.max_usd, self.spent,
+                                    self.reserved))
+            self.reserved += worst
+        return (role, model, worst)
+
+    def settle(self, ticket, usage):
+        """Replace a reservation with what the request actually cost."""
+        role, model, worst = ticket
+        with self._lock:
+            self.reserved = max(0.0, self.reserved - worst)
+        return self.charge(role, model, usage)
+
+    def release(self, ticket):
+        """A request that failed costs nothing; give its reservation back."""
+        with self._lock:
+            self.reserved = max(0.0, self.reserved - ticket[2])
+
+    def check(self, role, model, projected_input_tokens, max_output_tokens):
+        """Raise if the worst case for one request would cross the cap. Holds nothing."""
+        self.release(self.reserve(role, model, projected_input_tokens, max_output_tokens))
 
     def remaining(self):
         return max(0.0, self.max_usd - self.spent)

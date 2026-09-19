@@ -11,6 +11,7 @@ every refactor would cost real tokens to regression-test.
 """
 import json
 import os
+import threading
 
 from .base import ProviderError, Response, ToolCall, Usage, request_fingerprint
 
@@ -26,15 +27,19 @@ class ReplayProvider:
         self.mode = mode
         self.hits = 0
         self.misses = 0
+        # Agents run concurrently; the counters feed the spike's cassette count.
+        self._lock = threading.Lock()
         os.makedirs(cassette_dir, exist_ok=True)
 
     def complete(self, role, model, messages, tools=None, max_tokens=4096, extra=None):
         key = request_fingerprint(model, messages, tools, extra)
         path = os.path.join(self.cassette_dir, key + ".json")
         if self.mode in ("replay", "auto") and os.path.exists(path):
-            self.hits += 1
+            with self._lock:
+                self.hits += 1
             return _load(path)
-        self.misses += 1
+        with self._lock:
+            self.misses += 1
         if self.mode == "replay":
             raise ProviderError(
                 "no cassette for %s call to %s (key %s). The prompt changed: re-record "

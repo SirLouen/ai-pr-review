@@ -23,6 +23,7 @@ raised into the conversation loop. The single exception is budget exhaustion, wh
 returns the finalize notice.
 """
 import re
+import threading
 
 from . import gitsrc, routing, validate
 from .config import Caps, SHA_RE
@@ -613,6 +614,7 @@ class RepoSource:
         self.commits = tuple(dict.fromkeys(commits))
         self.commit_shas = frozenset(self.commits)
         self.path_tags = dict(path_tags or {})
+        self._index_lock = threading.Lock()
         self._indexes = {"head": gitsrc.tree_index(repo, head_sha),
                          "base": gitsrc.tree_index(repo, base_sha)}
         self._changed = None
@@ -620,15 +622,18 @@ class RepoSource:
         self._lines = {}
 
     def index_for(self, label):
-        index = self._indexes.get(label)
-        if index is not None:
+        # Agents share one RepoSource and now run concurrently; without the lock two of
+        # them could both pass the cap check and index past it.
+        with self._index_lock:
+            index = self._indexes.get(label)
+            if index is not None:
+                return index
+            if len(self._indexes) - 2 >= MAX_COMMIT_INDEXES:
+                raise ToolError("this run indexes at most %d pull-request commits; use head, "
+                                "base or a commit already read" % MAX_COMMIT_INDEXES)
+            index = gitsrc.tree_index(self.repo, label)
+            self._indexes[label] = index
             return index
-        if len(self._indexes) - 2 >= MAX_COMMIT_INDEXES:
-            raise ToolError("this run indexes at most %d pull-request commits; use head, base "
-                            "or a commit already read" % MAX_COMMIT_INDEXES)
-        index = gitsrc.tree_index(self.repo, label)
-        self._indexes[label] = index
-        return index
 
     def resolve_ref(self, raw):
         """head, base, or one of THIS run's commits. Nothing else is addressable.

@@ -82,6 +82,10 @@ class Validator:
         self._replies = Queue()
         self._stderr = []
         self._seq = 0
+        # One request in flight at a time. The bridge matches each reply to the last id
+        # sent; two threads interleaving would read each other's replies, and the id check
+        # below would then shut the bridge down mid-run.
+        self._lock = threading.Lock()
 
     def __enter__(self):
         return self
@@ -152,6 +156,10 @@ class Validator:
     # -- request/response
 
     def _call(self, op, **payload):
+        with self._lock:
+            return self._call_locked(op, payload)
+
+    def _call_locked(self, op, payload):
         proc = self._ensure()
         self._seq += 1
         payload["id"] = self._seq

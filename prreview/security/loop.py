@@ -108,9 +108,10 @@ def run_conversation(provider, role, model, system, user, session, meter=None, c
             messages.append({"role": "user", "content": toolsmod.FINALIZE_NOTICE})
             continue
 
+        ticket = None
         if meter is not None:
             try:
-                meter.check(role, model, projected, _output_cap(caps, model))
+                ticket = meter.reserve(role, model, projected, _output_cap(caps, model))
             except BudgetExceeded as error:
                 return done(BUDGET, str(error))
 
@@ -118,11 +119,13 @@ def run_conversation(provider, role, model, system, user, session, meter=None, c
             response = provider.complete(role, model, messages, catalogue,
                                          max_tokens=_output_cap(caps, model))
         except ProviderError as error:
+            if ticket is not None:
+                meter.release(ticket)
             return done(FAILED, str(error))
         turns += 1
         total = total.add(response.usage)
-        if meter is not None:
-            meter.charge(role, model, response.usage)
+        if ticket is not None:
+            meter.settle(ticket, response.usage)
         messages.append(_assistant_message(response))
 
         if not response.tool_calls:
