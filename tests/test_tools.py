@@ -416,6 +416,24 @@ class TestReadFile(Fixture):
         self.assertEqual(gap[0].detail, "next_line=6")
         self.assertEqual(session.read_log.ranges("long.ts", "head"), [[1, 5]])
 
+    def test_a_truncated_read_is_reported_until_the_missing_lines_are_read(self):
+        session = self.session(caps=replace(Caps(), read_lines=30))
+        session.dispatch(call("read_file", path="long.ts", ref="head",
+                              start_line=1, end_line=60))
+        reported = lambda: [o["kind"] for o in session.state()["omitted"]]
+        self.assertEqual(reported(), ["read_truncated"])
+        # Reading only part of the gap, or the gap at the other ref, closes nothing.
+        session.dispatch(call("read_file", path="long.ts", ref="head",
+                              start_line=31, end_line=45))
+        session.dispatch(call("read_file", path="long.ts", ref="base",
+                              start_line=46, end_line=60))
+        self.assertEqual(reported(), ["read_truncated"])
+        session.dispatch(call("read_file", path="long.ts", ref="head",
+                              start_line=46, end_line=60))
+        self.assertEqual(reported(), [])
+        # The raw record is kept; only the report treats the gap as closed.
+        self.assertEqual([o.kind for o in session.omissions], ["read_truncated"])
+
     def test_start_line_past_the_end_is_an_error_not_an_empty_success(self):
         session = self.session()
         result = session.dispatch(call("read_file", path="app.ts", ref="head", start_line=99))

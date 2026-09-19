@@ -520,14 +520,17 @@ class Omission:
     coverage.
     """
 
-    __slots__ = ("kind", "path", "ref", "reason", "detail")
+    __slots__ = ("kind", "path", "ref", "reason", "detail", "span")
 
-    def __init__(self, kind, path="", ref="", reason="", detail=""):
+    def __init__(self, kind, path="", ref="", reason="", detail="", span=None):
         self.kind = kind
         self.path = path
         self.ref = ref
         self.reason = reason
         self.detail = detail
+        # The lines that went unseen, when the gap is a line range a later read can
+        # close. Not part of the key: it is derived from the same request as `detail`.
+        self.span = span
 
     @property
     def key(self):
@@ -548,8 +551,8 @@ class Omissions:
         self._seen = set()
         self._items = []
 
-    def record(self, kind, path="", ref="", reason="", detail=""):
-        omission = Omission(kind, path, ref, reason, detail)
+    def record(self, kind, path="", ref="", reason="", detail="", span=None):
+        omission = Omission(kind, path, ref, reason, detail, span)
         if omission.key in self._seen:
             return omission
         self._seen.add(omission.key)
@@ -568,8 +571,13 @@ class Omissions:
     def paths(self):
         return sorted({item.path for item in self._items if item.path})
 
-    def as_dicts(self):
-        return [item.as_dict() for item in self._items]
+    def as_dicts(self, read_log=None):
+        """The omissions still open. A truncated read whose missing lines the same
+        conversation went on to read is closed by that read, not by assumption, so it
+        is dropped; without `read_log` every omission is returned."""
+        return [item.as_dict() for item in self._items
+                if not (read_log and item.span
+                        and read_log.covers_span(item.path, item.ref, *item.span))]
 
 
 # --------------------------------------------------------------------------- read log
@@ -623,6 +631,12 @@ class ReadLog:
             if low <= line <= high:
                 return True
         return False
+
+    def covers_span(self, path, ref, start, end):
+        """True when every line from start to end was read at ref. The ranges are
+        merged, so a span is covered only if one range holds it whole."""
+        return any(low <= start and end <= high
+                   for low, high in self._ranges.get((ref, path), ()))
 
     def ranges(self, path, ref):
         return [list(pair) for pair in self._ranges.get((ref, path), ())]
@@ -1250,7 +1264,8 @@ class ToolSession:
             self.omissions.record("read_truncated", path, label,
                                   "lines %d-%d were requested; %d-%d were returned"
                                   % (start, min(requested_end, total), start, delivered),
-                                  detail="next_line=%d" % (delivered + 1))
+                                  detail="next_line=%d" % (delivered + 1),
+                                  span=(delivered + 1, min(requested_end, total)))
         if cut_long:
             self.omissions.record("long_lines_cut", path, label,
                                   "one or more lines were cut at %d characters"
@@ -1607,7 +1622,7 @@ class ToolSession:
             "submit_rounds": self.rounds,
             "reviewed_paths": self.read_log.paths(),
             "read": self.read_log.summary(),
-            "omitted": self.omissions.as_dicts(),
+            "omitted": self.omissions.as_dicts(self.read_log),
         }
 
 
