@@ -248,7 +248,11 @@ facts, not things to investigate:
 Answer items 3, 4 and 5 from source, and for items 1 and 2 report only what a developer could
 run locally, marked as unavailable here."""
 
-SYSTEM_TEMPLATE = """[prreview security agent v1 | role=%(role)s | agent_id=%(agent_id)s]
+# The agent id is deliberately NOT here. DeepSeek caches by prefix, and this is the first
+# line of the request: an id at character ~130 made every agent after the first re-pay
+# for the whole shared prompt (M1 spike: each conversation's first turn was a full cache
+# miss of 10-21k tokens). It goes on the last line instead, after everything agents share.
+SYSTEM_TEMPLATE = """[prreview security agent v1 | role=%(role)s]
 You are one isolated agent in a security-audit run coordinated by trusted deterministic code
 (the "parent"). You cannot run code, use a network, write files, or start other agents. Your
 only capabilities are the tools in this request. They read an immutable snapshot of the
@@ -836,12 +840,17 @@ def _require_fingerprint(value, what):
     return value
 
 
+IDENTITY_TEMPLATE = ("Your role in this run is %s and your agent id is %s. Use this id "
+                     "wherever a result asks for your own agent_id.")
+
+
 def _assemble(role, agent_id, facts, framer, parts, pack, submit_tool=None,
               budget_tokens=None, reserve_tokens=0):
     if role not in ROLES:
         raise PromptError("unknown role %r" % (role,))
     tool = submit_tool or SUBMIT_TOOLS[role]
     head = system_parts(role, agent_id, facts, framer, pack=pack, submit_tool=tool)
+    parts = list(parts) + [_action("agent identity", IDENTITY_TEMPLATE % (role, agent_id))]
     user = "\n\n".join(part.text for part in parts)
     prompt = Prompt(role=role, agent_id=agent_id,
                     system="\n\n".join(p.text for p in head),

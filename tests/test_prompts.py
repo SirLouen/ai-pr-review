@@ -700,7 +700,28 @@ class SystemPrompt(unittest.TestCase):
     def test_role_and_agent_id_are_stated(self):
         prompt = hunter()
         self.assertIn("role=hunter", prompt.system)
-        self.assertIn("agent_id=hunter-1", prompt.system)
+        self.assertIn("agent id is hunter-1", prompt.user)
+
+    def test_the_agent_id_comes_last_so_agents_share_a_cached_prefix(self):
+        """DeepSeek caches by prefix. An id near the top made every agent re-pay for the
+        whole shared prompt; at the end, only the final line differs."""
+        one = prompts.hunter_prompt(facts(), framer(), "hunter-1", [unit()],
+                                    architecture=architecture(), context_pack="PACK")
+        two = prompts.hunter_prompt(facts(), framer(), "hunter-2", [unit()],
+                                    architecture=architecture(), context_pack="PACK")
+        self.assertNotIn("hunter-1", one.system, "the id must not be in the system message")
+        self.assertEqual(one.system, two.system, "same role, same system message")
+        shared = os.path.commonprefix([one.user, two.user])
+        # Everything up to the agent-specific parts is identical. For a hunter the skill
+        # fixes part 3 (the assignment, which names the agent) before the verbatim blocks,
+        # so the shared span ends there; for a verifier it runs to the identity line.
+        self.assertGreater(len(shared), 0)
+        verifier_one = prompts.verifier_prompt(facts(), framer(), "verifier-1", candidate())
+        verifier_two = prompts.verifier_prompt(facts(), framer(), "verifier-2", candidate())
+        self.assertEqual(verifier_one.system, verifier_two.system)
+        common = os.path.commonprefix([verifier_one.user, verifier_two.user])
+        self.assertGreater(len(common) / len(verifier_one.user), 0.95,
+                           "a verifier differs from its peer only in its last line")
 
     def test_unknown_role_is_refused(self):
         with self.assertRaises(prompts.PromptError):
