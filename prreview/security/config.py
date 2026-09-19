@@ -68,7 +68,10 @@ class Caps:
     # that, recall degrades faster than the extra context helps.
     context_fraction: float = 0.25
     tool_output_bytes: int = 300_000
-    max_turns = {"recon": 30, "hunter": 26, "critic": 20, "verifier": 25}
+    # Recon at 20, not 30: on the first real pull request the recon agents that ran to
+    # turn 30 were the most expensive in the run, because every turn re-sends the whole
+    # history. Two turns before the limit the loop tells an agent to submit what it has.
+    max_turns = {"recon": 20, "hunter": 26, "critic": 20, "verifier": 25}
     blob_bytes: int = 2 * 1024 * 1024
     read_lines: int = 400
     read_bytes: int = 40_000

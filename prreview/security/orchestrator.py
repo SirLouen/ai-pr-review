@@ -43,6 +43,10 @@ REASON_CRITIC = "critic_budget_exhausted"
 REASON_SIZE = "pr_exceeds_size_gate"
 REASON_GATE = "final_gate_failed"
 
+# Reconnaissance for a pull-request run: product and trust-sensitive actions (1a),
+# principals and controls (1b), entry surfaces and sinks (1c). See Orchestrator.recon.
+PR_RECON_AGENTS = ("1a", "1b", "1c")
+
 
 class RunAborted(Exception):
     """Stops the run with a recorded reason. The bundle is still written."""
@@ -247,21 +251,30 @@ class Orchestrator:
         self.budget_plan = plan
         return plan
 
-    def recon(self, facts, architecture=None, changed_paths=()):
-        """P1: delta reconnaissance.
+    def recon(self, facts, architecture=None, changed_paths=(), agents=None):
+        """P1: reconnaissance.
 
-        The skill reserves four baseline reconnaissance calls per run (SKILL.md:123).
-        With a usable baseline architecture.md this run spends one instead, which is a
-        deviation, not an interpretation, so it is registered as one.
+        The skill reserves four baseline reconnaissance calls per run (SKILL.md:123). A
+        pull-request run spends fewer, and each shortfall is a deviation, not an
+        interpretation, so it is registered as one. `agents` overrides the choice; the
+        scheduled baseline audit passes all four.
         """
-        if architecture is not None:
+        if agents is not None:
+            agents = tuple(agents)
+        elif architecture is not None:
             self.deviate("delta reconnaissance",
                          "one delta-recon agent instead of the four baseline calls "
                          "reserved by SKILL.md:123, because a baseline architecture.md "
                          "for the merge-base was available")
             agents = ("1c",)
         else:
-            agents = prompts.RECON_AGENTS
+            self.deviate("reconnaissance agent 1d omitted",
+                         "SKILL.md:123 reserves four baseline calls. Agent 1d maps local "
+                         "execution, sandbox and promotion facts; this action executes "
+                         "nothing, and the parent already answers four of its seven "
+                         "items as run facts. On the first real pull request it ran to "
+                         "its turn limit without submitting.")
+            agents = PR_RECON_AGENTS
         jobs = []
         for number, agent in enumerate(agents, start=1):
             identifier = ledgermod.agent_id("recon", number)

@@ -679,7 +679,7 @@ def progress(message):
     sys.stderr.flush()
 
 
-def drive(cfg, creds, services, writer, recon_calls=4):
+def drive(cfg, creds, services, writer, recon_agents=None):
     """P0..P5. Returns (parent, report inputs). Raises RunAborted or whatever broke."""
     validator = validatemod.Validator(cfg.vendor_dir, node=services.node)
     writer.validator = validator
@@ -716,10 +716,14 @@ def drive(cfg, creds, services, writer, recon_calls=4):
 
     prior = load_prior(cfg, services, repo, diff, writer.notes)
     architecture = prior.architecture()
-    if architecture is not None:
-        # One delta-recon agent instead of four; Orchestrator.recon registers the
-        # deviation, and the budget gate must reserve what will actually be spent.
+    # The budget gate must reserve exactly what reconnaissance will spend. Orchestrator.
+    # recon registers each shortfall from the skill's four calls as a deviation.
+    if recon_agents is not None:
+        recon_calls = len(recon_agents)
+    elif architecture is not None:
         recon_calls = 1
+    else:
+        recon_calls = len(orchestrator.PR_RECON_AGENTS)
 
     provider = services.provider(cfg, creds)
     parent = orchestrator.Orchestrator(cfg, provider, validator, source, skill,
@@ -734,7 +738,8 @@ def drive(cfg, creds, services, writer, recon_calls=4):
              % (len(parent.ledger.units), len(changes), len(parent.assignments)))
 
     changed_paths = source.changed_paths()
-    recon_results = parent.recon(facts, architecture=architecture, changed_paths=changed_paths)
+    recon_results = parent.recon(facts, architecture=architecture, changed_paths=changed_paths,
+                                 agents=recon_agents)
     if not recon_results:
         parent.notes.append("no reconnaissance agent returned a usable result; companion "
                             "selection rests on the parent's routing alone")
@@ -837,7 +842,7 @@ def render_bundle(cfg, writer, parent, diff, gate, units, facts_pr, sarif_enable
     return report
 
 
-def cmd_analyze(args, env, services=None, profile="quick", scope="diff", recon_calls=4,
+def cmd_analyze(args, env, services=None, profile="quick", scope="diff", recon_agents=None,
                 sarif_enabled=False):
     apply_overrides(args, env)
     try:
@@ -855,7 +860,7 @@ def cmd_analyze(args, env, services=None, profile="quick", scope="diff", recon_c
     status = EXIT_OK
     try:
         parent, diff, gate, units, facts_pr = drive(cfg, creds, services, writer,
-                                                    recon_calls=recon_calls)
+                                                    recon_agents=recon_agents)
         render_bundle(cfg, writer, parent, diff, gate, units, facts_pr,
                       sarif_enabled=sarif_enabled)
         if parent.status != orchestrator.COMPLETE:
@@ -1018,7 +1023,7 @@ def cmd_baseline(args, env, services=None):
     """
     return cmd_analyze(args, env, services=services, profile="standard",
                        scope="default-branch-delta",
-                       recon_calls=len(prompts.RECON_AGENTS))
+                       recon_agents=prompts.RECON_AGENTS)
 
 
 def cmd_replay(args, env, services=None):

@@ -370,3 +370,34 @@ class ReconFactsMustExist(EndToEnd):
         out = self.submit({"principals": [{"name": "c", "authority": "a",
                                            "path": "src/users.js", "line": 99}]})
         self.assertIn("has 3 lines", " ".join(out.outcome.errors))
+
+
+class ReconForAPullRequest(EndToEnd):
+    class Quiet:
+        """Refuses every call, so recon() is measured without spending anything."""
+
+        def complete(self, *a, **k):
+            from prreview.security.providers.base import ProviderError
+            raise ProviderError("no model in this test")
+
+    def recon_with(self, **kwargs):
+        from prreview.security import prompts
+        parent, _, _ = self.build()
+        parent.provider = self.Quiet()
+        facts = prompts.RunFacts.from_config(parent.cfg, skill_commit=self.skill.commit,
+                                             commit_count=len(self.commits))
+        parent.recon(facts, **kwargs)
+        return parent
+
+    def test_a_pull_request_run_skips_1d_and_says_so(self):
+        parent = self.recon_with()
+        self.assertEqual(len(parent.conversations), len(orchestrator.PR_RECON_AGENTS))
+        self.assertEqual(orchestrator.PR_RECON_AGENTS, ("1a", "1b", "1c"))
+        self.assertIn("reconnaissance agent 1d omitted",
+                      [d["deviation"] for d in parent.deviations])
+
+    def test_the_baseline_audit_still_spends_all_four(self):
+        from prreview.security import prompts
+        parent = self.recon_with(agents=prompts.RECON_AGENTS)
+        self.assertEqual(len(parent.conversations), 4)
+        self.assertEqual(parent.deviations, [], "the skill's four calls are no deviation")

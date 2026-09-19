@@ -341,6 +341,15 @@ DOC_GLOBS = ("*.md", "*.markdown", "*.rst", "*.txt", "*.adoc", "docs/**", "doc/*
              "**/CHANGELOG*", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg", "*.ico",
              "**/*.png", "**/*.svg")
 
+# Test code. It still lands in the diff-wide units (Obvious things over the diff, Wildcard
+# over the PR's commits), which look for committed secrets and fixtures reachable from
+# shipped code. What it no longer gets is a dedicated per-file Injection hunter: on the
+# first real pull request those cost a hunter each and found nothing a test cannot hold.
+TEST_GLOBS = ("*_test.go", "**/*_test.go", "*.test.*", "**/*.test.*", "*.spec.*",
+              "**/*.spec.*", "test_*.py", "**/test_*.py", "*_test.py", "**/*_test.py",
+              "**/__tests__/**", "test/**", "tests/**", "**/test/**", "**/tests/**",
+              "*.feature", "**/*.feature")
+
 # Agent-instruction files are Markdown but steer CI agents, so they are never "docs".
 AGENT_INSTRUCTION_GLOBS = (
     "AGENTS.md", "CLAUDE.md", "GEMINI.md", ".cursorrules", ".windsurfrules",
@@ -1000,6 +1009,11 @@ def is_doc(path):
     return matches_any(path, DOC_GLOBS)
 
 
+def is_test(path):
+    """Test code, which the diff-wide units cover without a per-file hunter."""
+    return matches_any(path, TEST_GLOBS)
+
+
 def is_code(path):
     dot = path.rfind(".")
     return dot > 0 and path[dot:].lower() in CODE_EXTS
@@ -1321,7 +1335,7 @@ def floor_paths(routing, changed_files):
     out = []
     for entry in changed_files:
         change = normalize_change(entry)
-        if is_doc(change["path"]):
+        if is_doc(change["path"]) or is_test(change["path"]):
             continue
         tags = set(routing.path_tags.get(change["path"], ()))
         classes = [block_id(ATTACK, "Injection")]

@@ -556,3 +556,31 @@ class PreFilterNoteTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFilesAtTheFloor(unittest.TestCase):
+    """PR #225 in gopherium/gophenberg changes 9 files, 6 of them tests."""
+
+    CHANGES = [{"path": "internal/postgres/groups.go", "status": "modified",
+                "added": ["q := x"], "removed": []},
+               {"path": "internal/postgres/groups_test.go", "status": "modified",
+                "added": ["t.Run()"], "removed": []},
+               {"path": "test/features/features/field-groups.feature", "status": "modified",
+                "added": ["Scenario: x"], "removed": []},
+               {"path": "sdk/frontend/testing.tsx", "status": "modified",
+                "added": ["export x"], "removed": []}]
+
+    def test_test_files_get_no_per_file_unit(self):
+        paths = [f["path"] for f in routing.floor_paths(routing.route(self.CHANGES), self.CHANGES)]
+        self.assertIn("internal/postgres/groups.go", paths)
+        self.assertNotIn("internal/postgres/groups_test.go", paths)
+        self.assertNotIn("test/features/features/field-groups.feature", paths)
+
+    def test_a_shipped_testing_module_is_not_a_test(self):
+        """sdk/frontend/testing.tsx is a package export; it keeps its own unit."""
+        paths = [f["path"] for f in routing.floor_paths(routing.route(self.CHANGES), self.CHANGES)]
+        self.assertIn("sdk/frontend/testing.tsx", paths)
+
+    def test_names_that_merely_contain_test_are_code(self):
+        for path in ("contest/app.go", "src/testimonials.go", "src/auth/latest.ts"):
+            self.assertFalse(routing.is_test(path), path)
