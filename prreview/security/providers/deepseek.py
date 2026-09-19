@@ -53,6 +53,20 @@ class DeepSeekProvider:
         data = self._post("/chat/completions", body)
         return _to_response(data, model)
 
+    def warm(self, role, model, messages, tools=None):
+        """Prefill one prompt so agents that share its prefix find the cache warm.
+
+        DeepSeek caches a prompt only once a request for it has been processed, so agents
+        launched together all miss it (M1 spike, second run: the first six verifiers 0%
+        cached, the next four 98%). One request with max_tokens=1 fills the cache before
+        the wave starts. Its answer is meaningless and ignored; only the usage matters.
+        """
+        body = {"model": model, "messages": messages, "max_tokens": 1,
+                "temperature": 0.0, "stream": False}
+        if tools:
+            body["tools"] = tools
+        return _usage(self._post("/chat/completions", body))
+
     def _post(self, path, body):
         payload = json.dumps(body).encode("utf-8")
         request = urllib.request.Request(
@@ -76,6 +90,17 @@ class DeepSeekProvider:
             if attempt < MAX_ATTEMPTS - 1:
                 time.sleep(min(2 ** attempt, 8))
         raise last or ProviderError("DeepSeek call failed with no diagnostic")
+
+
+def _usage(data):
+    raw = (data or {}).get("usage") or {}
+    details = raw.get("completion_tokens_details") or {}
+    hit = raw.get("prompt_cache_hit_tokens", 0)
+    miss = raw.get("prompt_cache_miss_tokens")
+    if miss is None:
+        miss = max(0, raw.get("prompt_tokens", 0) - hit)
+    return Usage(cache_miss=miss, cache_hit=hit, output=raw.get("completion_tokens", 0),
+                 reasoning=details.get("reasoning_tokens", 0))
 
 
 def _parse_json(raw):
@@ -112,15 +137,7 @@ def _to_response(data, model):
             continue
         tool_calls.append(ToolCall(call.get("id") or "", name, arguments))
 
-    usage_raw = data.get("usage") or {}
-    details = usage_raw.get("completion_tokens_details") or {}
-    hit = usage_raw.get("prompt_cache_hit_tokens", 0)
-    miss = usage_raw.get("prompt_cache_miss_tokens")
-    if miss is None:
-        miss = max(0, usage_raw.get("prompt_tokens", 0) - hit)
-    usage = Usage(cache_miss=miss, cache_hit=hit,
-                  output=usage_raw.get("completion_tokens", 0),
-                  reasoning=details.get("reasoning_tokens", 0))
+    usage = _usage(data)
 
     text = (message.get("content") or "").strip()
     reasoning = message.get("reasoning_content") or ""

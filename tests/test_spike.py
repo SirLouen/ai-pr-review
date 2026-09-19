@@ -118,6 +118,12 @@ class Concerns(unittest.TestCase):
         found = self.spike.concerns(report)
         self.assertEqual(len(found), 3, found)
 
+    def test_a_hunters_cold_cache_is_expected_not_flagged(self):
+        """The skill's part order caps what hunters can share; that is not a finding."""
+        report = self.spike.Report()
+        report.probes["hunter"] = {"headroom": 0.6, "first_turn_cache_hit_after_first": 0.0}
+        self.assertEqual(self.spike.concerns(report), [])
+
     def test_healthy_numbers_raise_nothing(self):
         report = self.spike.Report()
         report.probes["verifier"] = {"headroom": 0.6, "first_turn_cache_hit_after_first": 0.9,

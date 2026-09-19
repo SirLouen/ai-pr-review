@@ -194,3 +194,71 @@ class BridgeStaysInSync(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WarmingProvider(SlowProvider):
+    """Records warm-ups; can be told to fail them."""
+
+    def __init__(self, fail=False):
+        super().__init__({})
+        self.warmed = []
+        self.fail = fail
+
+    def warm(self, role, model, messages, tools=None):
+        from prreview.security.providers.base import ProviderError
+        self.warmed.append((messages, tools))
+        if self.fail:
+            raise ProviderError("warm-up refused")
+        return Usage(cache_miss=10_000, output=1)
+
+
+class CacheWarmUp(unittest.TestCase):
+    """Second M1 spike run: the first concurrent wave was 0% cached, the next 98%."""
+
+    def test_a_concurrent_wave_is_warmed_once_with_the_first_agents_request(self):
+        caps = Caps(parallel_conversations=4)
+        provider = WarmingProvider()
+        batch = jobs(caps, 4)
+        Parent(provider, caps).run_agents(batch)
+        self.assertEqual(len(provider.warmed), 1)
+        messages, tools = provider.warmed[0]
+        self.assertEqual(messages, [{"role": "system", "content": "SYSTEM"},
+                                    {"role": "user", "content": "agent-0"}])
+        self.assertEqual(tools, batch[0].session.tools(strict=False),
+                         "the loop's own catalogue, or the prefixes would not match")
+
+    def test_a_single_agent_is_not_warmed(self):
+        caps = Caps(parallel_conversations=4)
+        provider = WarmingProvider()
+        Parent(provider, caps).run_agents(jobs(caps, 1))
+        self.assertEqual(provider.warmed, [])
+
+    def test_a_sequential_run_is_not_warmed(self):
+        caps = Caps(parallel_conversations=1)
+        provider = WarmingProvider()
+        Parent(provider, caps).run_agents(jobs(caps, 3))
+        self.assertEqual(provider.warmed, [], "each agent already warms the next")
+
+    def test_a_failed_warm_up_changes_nothing_and_costs_nothing(self):
+        caps = Caps(parallel_conversations=4)
+        provider = WarmingProvider(fail=True)
+        parent = Parent(provider, caps)
+        results = parent.run_agents(jobs(caps, 4))
+        self.assertTrue(all(r.ok for r in results))
+        self.assertEqual(parent.meter.reserved, 0.0, "the reservation was given back")
+
+    def test_the_warm_up_is_charged_like_any_request(self):
+        caps = Caps(parallel_conversations=4)
+        parent = Parent(WarmingProvider(), caps)
+        parent.run_agents(jobs(caps, 2))
+        warm_cost = 10_000 * 0.30 / 1_000_000 + 1 * 1.20 / 1_000_000
+        self.assertGreaterEqual(parent.meter.spent, warm_cost)
+
+    def test_replay_never_sends_a_warm_up(self):
+        import tempfile
+        from prreview.security.providers.replay import ReplayProvider
+        inner = WarmingProvider()
+        player = ReplayProvider(tempfile.mkdtemp(prefix="cassette-"), inner=inner,
+                                mode="replay")
+        self.assertIsNone(player.warm("hunter", "deepseek-flash", []))
+        self.assertEqual(inner.warmed, [])

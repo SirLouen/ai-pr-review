@@ -28,7 +28,7 @@ from . import config, gitsrc
 from . import ledger as ledgermod
 from . import loop, pack, prompts, routing, seeders, tools
 from .dataframe import DataFramer
-from .providers.base import CostMeter
+from .providers.base import BudgetExceeded, CostMeter, ProviderError, estimate_tokens
 
 COMPLETE = "complete"
 INCOMPLETE = "incomplete"
@@ -137,6 +137,8 @@ class Orchestrator:
         if not jobs:
             return []
         workers = max(1, min(self.cfg.caps.parallel_conversations, len(jobs)))
+        if workers > 1:
+            self._warm(jobs[0])
         if workers == 1:
             results = [self._converse(job) for job in jobs]
         else:
@@ -153,6 +155,37 @@ class Orchestrator:
                                   % (result.role, result.agent_id, result.status,
                                      result.reason))
         return results
+
+    def _warm(self, job):
+        """Fill the provider's prompt cache before a concurrent wave. Best effort only.
+
+        Agents launched together cannot reuse each other's prompt: the cache is filled
+        only once a request has been processed. One prefill of the first agent's exact
+        request, which pays the miss that agent would have paid anyway, lets the whole
+        wave share the prefix. A warm-up that fails or is refused changes nothing else.
+        """
+        warm = getattr(self.provider, "warm", None)
+        if warm is None:
+            return
+        model = self.cfg.models[job.role]
+        messages = [{"role": "system", "content": job.system},
+                    {"role": "user", "content": job.user}]
+        # The same catalogue the loop will send, or the prefixes would not match.
+        catalogue = job.session.tools(strict=False)
+        try:
+            ticket = self.meter.reserve(job.role, model,
+                                        estimate_tokens(messages, catalogue), 1)
+        except BudgetExceeded:
+            return
+        try:
+            usage = warm(job.role, model, messages, catalogue)
+        except ProviderError:
+            self.meter.release(ticket)
+            return
+        if usage is None:
+            self.meter.release(ticket)
+        else:
+            self.meter.settle(ticket, usage)
 
     def _converse(self, job):
         return loop.run_conversation(self.provider, job.role, self.cfg.models[job.role],
@@ -245,6 +278,7 @@ class Orchestrator:
             session = self.session_for("hunter", identifier)
             context = pack.hunter_pack(self.packsrc, self.diff, units,
                                        self.pack_budget("hunter"))
+            credit_pack(session, context)
             prompt = prompts.hunter_prompt(
                 facts, self.framer, identifier, units,
                 architecture=architecture,
@@ -305,6 +339,7 @@ class Orchestrator:
                                        expected=(fingerprint,) if fingerprint else None)
             context = pack.verifier_pack(self.packsrc, candidate,
                                          self.pack_budget("verifier"), diff=self.diff)
+            credit_pack(session, context)
             prompt = prompts.verifier_prompt(
                 facts, self.framer, identifier, candidate,
                 architecture=architecture, assigned_fingerprint=fingerprint,
@@ -413,6 +448,19 @@ class Orchestrator:
                 self.ledger.defer(coverage_id, reason)
             except ledgermod.LedgerError:
                 pass
+
+
+def credit_pack(session, context):
+    """Record the warm-start pack's lines as read in this agent's conversation.
+
+    The pack is the source itself, read from git objects and placed in this agent's own
+    prompt, so those lines were read in this conversation (VALIDATION-AND-REPORTING.md:5).
+    Only ranges the pack actually carried are credited; a cited line outside them still
+    has to be opened with a tool. Without this, the M1 spike's second run rejected nine
+    of ten flash verifiers' first submit for citing lines they had been shown.
+    """
+    for span in getattr(context, "read_ranges", ()) or ():
+        session.read_log.pack(span["path"], span["ref"], span["start"], span["end"])
 
 
 def routing_changes(repo, merge_base, head, diff, max_bytes=200_000):

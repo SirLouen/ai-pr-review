@@ -394,7 +394,10 @@ def concerns(report):
             out.append("%s: largest turn used %.0f%% of the per-turn output cap; a longer "
                        "thought would truncate the answer" % (role, 100 * (1 - headroom)))
         hit = probe.get("first_turn_cache_hit_after_first")
-        if hit is not None and hit < 0.5:
+        # Verifiers only. HUNTING.md:13-23 puts each hunter's own assignment (part 3)
+        # before the shared verbatim blocks, so hunters can never share more than about
+        # 15% of their prompt; flagging that on every run would be noise, not a finding.
+        if role == "verifier" and hit is not None and hit < 0.5:
             out.append("%s: later agents' first turn only %.0f%% cached; the shared prompt "
                        "prefix is not being reused" % (role, 100 * hit))
         missing = (probe.get("unparsable_calls") or 0) and not probe.get(

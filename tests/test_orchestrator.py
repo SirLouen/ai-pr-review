@@ -228,3 +228,70 @@ class EndToEnd(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EagerVerifier:
+    """Submits on its first turn, citing only what its warm-start pack showed it.
+
+    This is what DeepSeek flash did in the second M1 spike run. Every scripted model in
+    the other tests calls read_file first, which is why none of them caught the pack's
+    reads going uncredited.
+    """
+
+    def __init__(self, cite):
+        self.cite = cite            # [(path, line)] the verdict cites
+
+    def complete(self, role, model, messages, tools=None, max_tokens=4096, extra=None):
+        from prreview.security import tools as toolsmod
+        trace = [{"kind": kind, "file": path, "line": line, "scope": "getUser",
+                  "description": "d"}
+                 for kind, (path, line) in zip(("entrypoint", "sink"), self.cite)]
+        record = {"verdict": "needs_validation", "fingerprint":
+                  "sa1:injection:src/users.js@getUser",
+                  "title": "Request parameter concatenated into a SQL query",
+                  "description": "An attacker controls the WHERE clause.",
+                  "claimed_root_cause": "req.query.id is concatenated into the query",
+                  "trace": trace,
+                  "evidence": [{"file": self.cite[-1][0], "line": self.cite[-1][1],
+                                "description": "d"}],
+                  "blockers": ["[execution] the service was not run"],
+                  "validation_plan": {"local": "unit test", "deployment": None}}
+        declared = toolsmod.SUBMIT_SCHEMAS["submit_verdict"]["properties"]["record"]
+        for key in declared["properties"]:
+            record.setdefault(key, None)
+        return Response(tool_calls=[ToolCall("s1", "submit_verdict",
+                                             {"decision": "needs_validation",
+                                              "record": record,
+                                              "same_root_cause_as": None})],
+                        usage=Usage(cache_miss=10, output=5), finish_reason="tool_calls")
+
+
+class PackCountsAsRead(EndToEnd):
+    def verify_with(self, cite):
+        parent, _, source = self.build()
+        parent.provider = EagerVerifier(cite)
+        diff = gitsrc.diff_index(self.repo, self.base, self.head)
+        parent.plan(diff, orchestrator.routing_changes(self.repo, self.base, self.head, diff),
+                    len(self.commits), lambda path: "getUser")
+        from prreview.security import prompts
+        facts = prompts.RunFacts.from_config(parent.cfg, skill_commit=self.skill.commit,
+                                             commit_count=len(self.commits))
+        candidate = {"fingerprint": "sa1:injection:src/users.js@getUser",
+                     "title": "t", "claimed_root_cause": "c",
+                     "trace": [{"kind": "sink", "file": "src/users.js", "line": 2,
+                                "scope": "getUser", "description": "d"}],
+                     "evidence": [{"file": "src/users.js", "line": 2, "description": "d"}]}
+        parent.verify(facts, [candidate])
+        return parent.conversations[-1]
+
+    def test_a_verifier_may_cite_lines_its_pack_showed_it(self):
+        conversation = self.verify_with([("src/users.js", 1), ("src/users.js", 2)])
+        self.assertEqual(conversation.status, "ok", conversation.reason)
+        self.assertEqual(conversation.state["submit_rounds"], 1,
+                         "accepted on the first submit, as the spike's verifiers should be")
+
+    def test_a_line_the_pack_never_showed_still_has_to_be_read(self):
+        """The control: crediting the pack must not credit everything."""
+        conversation = self.verify_with([("src/users.js", 1), ("README.md", 1)])
+        self.assertNotEqual(conversation.state["submit_rounds"], 1,
+                            "README.md was not in the pack, so citing it unread must fail")
