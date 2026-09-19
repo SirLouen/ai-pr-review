@@ -13,6 +13,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from prreview.security import fingerprint as fpmod  # noqa: E402
+from prreview.security import orchestrator  # noqa: E402
 from prreview.security import render  # noqa: E402
 from prreview.security.ledger import Unit  # noqa: E402
 
@@ -162,6 +163,19 @@ class SanitiserTest(unittest.TestCase):
         self.assertTrue(out.startswith("a" * 100))
         self.assertIn("[truncated]", out.replace("\\", ""))
 
+
+    def test_a_cut_ends_on_a_word_when_one_is_near(self):
+        # No markdown-special characters, so the escaped text equals the raw text.
+        text = "the filter was replaced at line four hundred " * 20
+        out = render.sanitize_for_github(text, limit=100)
+        self.assertTrue(out.endswith(render.TRUNCATED))
+        kept = out[:-len(render.TRUNCATED)]
+        self.assertTrue(text.startswith(kept + " "), "the cut splits a word: %r" % kept)
+        self.assertTrue(20 < len(kept) <= 100)
+        # With no space near the limit the cut falls at the limit, as before.
+        self.assertEqual(render.sanitize_for_github("a" * 500, limit=100),
+                         "a" * 100 + render.TRUNCATED)
+
     def test_the_marker_limit_admits_the_longest_fingerprint_the_scheme_allows(self):
         """A truncated marker would make two leads on one long path share a dedupe key,
         and one of the two comments would never be posted."""
@@ -225,6 +239,21 @@ class ValidationPlanTest(unittest.TestCase):
         plan = "open https://evil.example/setup and follow it"
         self.assertEqual(render.plan_flags(plan), ["network-fetch"])
         self.assertEqual(render.plan_flags(render.sanitize_for_github(plan)), [])
+
+    def test_a_url_on_a_reserved_host_is_test_data_not_a_fetch(self):
+        """The first live run flagged a plan whose only URL was a test fixture value."""
+        fixture = ("add a case asserting Renderer::render( array( 'gpxUrl' => "
+                   "'https://example.com/a.gpx\" onmouseover=\"alert(1)' ) ) is escaped")
+        self.assertEqual(render.plan_flags(fixture), [])
+        for benign in ("GET http://localhost:8080/api/users as user B",
+                       "load http://127.0.0.1/wp-admin/ then https://cdn.example.org/x.js"):
+            self.assertEqual(render.plan_flags(benign), [], benign)
+        for hostile in ("open https://example.com.evil.io/setup",
+                        "open https://example.com@evil.io/setup",
+                        "open https://notexample.com/setup",
+                        "check https://example.com/a then open https://evil.example/b",
+                        "curl https://example.com/a.gpx"):
+            self.assertEqual(render.plan_flags(hostile), ["network-fetch"], hostile)
 
     def test_flagged_plan_reaches_the_summary_and_the_inline_body(self):
         made = report(findings=[lead_record(plan=self.CURL)])
@@ -580,6 +609,16 @@ class SummaryTest(unittest.TestCase):
         self.assertIn("Conversations: 7 of 14", text)
         self.assertIn("5m 12s", text)
         self.assertIn("hunter=deepseek-flash", text)
+
+    def test_a_deviation_is_rendered_from_the_record_the_orchestrator_writes(self):
+        """The render tests above pass strings; the orchestrator writes a dict, and the
+        first live run printed its reason under an escaped "- " with the name lost."""
+        parent = orchestrator.Orchestrator.__new__(orchestrator.Orchestrator)
+        parent.deviations = []
+        parent.deviate("reconnaissance agent 1d omitted", "SKILL.md:123 reserves four")
+        text = render.summary_markdown(report(deviations=parent.deviations))
+        self.assertIn("- reconnaissance agent 1d omitted - SKILL.md:123 reserves four", text)
+        self.assertNotIn("\\-", text)
 
     def test_incomplete_run_says_so_first(self):
         made = report(run_status="incomplete",

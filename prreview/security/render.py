@@ -51,9 +51,16 @@ from .tools import blocker_kinds
 TITLE_LIMIT = 160
 BODY_LIMIT = 1_200
 PATH_LIMIT = 200
-PLAN_LIMIT = 900
+# Sized from what the model writes on a real lead (gpx-route-map#21: a 635-character
+# root cause, a 478-character blocker, a 1,034-character plan), not from fixtures.
+ROOT_CAUSE_LIMIT = 1_000
+BLOCKER_LIMIT = 600
+PLAN_LIMIT = 1_500
+OWNER_CHECK_LIMIT = 600
+TRACE_STEP_LIMIT = 400
 SUMMARY_LIMIT = 60_000
-INLINE_LIMIT = 6_000
+# GitHub takes 65,536; this keeps a lead with every field at its limit uncut.
+INLINE_LIMIT = 12_000
 MAX_TRACE_LINES = 8
 MAX_LEADS_IN_SUMMARY = 25
 MAX_NOT_REVIEWED = 60
@@ -143,9 +150,7 @@ PLAN_SHAPES = (
     ("package-install", re.compile(
         r"(?i)\b(?:npm|pnpm|yarn|bun|npx|pip|pip3|pipx|uv|gem|cargo|go|apt|apt-get|dnf|"
         r"yum|apk|brew|composer|poetry|conda)\s+(?:-\S+\s+)*(?:install|add|get|i)\b")),
-    ("network-fetch", re.compile(
-        r"(?i)(\b(?:curl|wget|nc|ncat|netcat|scp|sftp|rsync|invoke-webrequest|iwr)\b"
-        r"|\bhttps?://)")),
+    ("network-fetch", None),               # _fetches: a command, or a URL off a reserved host
     ("shell-pipeline", re.compile(
         r"(?i)\|\s*(?:sudo\s+)?(?:sh|bash|zsh|dash|ksh|fish|python3?|node|deno|perl|ruby|"
         r"php|tee|xargs)\b")),
@@ -153,6 +158,31 @@ PLAN_SHAPES = (
     ("chmod", re.compile(r"(?i)(?:^|[;&|\s])(?:chmod|chown|chattr|chgrp|setfacl)\b")),
     ("redirection", re.compile(r"(?:^|\s)>{1,2}\s*[\w./~$'\"-]|\b\d?>&\d\b")),
 )
+
+_FETCH_COMMAND = re.compile(
+    r"(?i)\b(?:curl|wget|nc|ncat|netcat|scp|sftp|rsync|invoke-webrequest|iwr)\b")
+_PLAN_URL = re.compile(r"(?i)\bhttps?://[^\s'\"<>()\[\]{}|\\^`]*")
+# Hosts no one outside the reader's machine can serve: the IANA-held documentation
+# domains (RFC 2606) and loopback. A plan quoting https://example.com/a.gpx as test data
+# is not telling anyone to fetch it. The `.example` TLD is not here: it resolves
+# wherever someone configures it, and the tests use it for the hostile case.
+_RESERVED_HOSTS = ("example.com", "example.net", "example.org")
+_LOOPBACK = frozenset(("localhost", "127.0.0.1", "::1"))
+
+
+def _reserved_host(url):
+    try:
+        host = (urllib.parse.urlsplit(url).hostname or "").rstrip(".")
+    except ValueError:
+        return False
+    return host in _LOOPBACK or any(host == name or host.endswith("." + name)
+                                    for name in _RESERVED_HOSTS)
+
+
+def _fetches(raw):
+    return bool(_FETCH_COMMAND.search(raw)) or any(
+        not _reserved_host(url) for url in _PLAN_URL.findall(raw))
+
 
 # Every kind `tools.Omissions` can record, plus the parent-side gates, in one place so
 # the "Not reviewed" section never prints a bare machine word at a reviewer.
@@ -247,7 +277,9 @@ def sanitize_for_github(text, limit=BODY_LIMIT, allow_newlines=False):
         raw = re.sub(r"\s+", " ", raw).strip()
     cut = False
     if limit and len(raw) > limit:
-        raw, cut = raw[:limit], True
+        # End on a word when one is near, so the cut reads as a cut and not a typo.
+        space = raw.rfind(" ", limit - 80, limit + 1)
+        raw, cut = raw[:space if space > 0 else limit].rstrip(), True
     escaped = _escape(raw)
     return escaped + TRUNCATED if cut else escaped
 
@@ -402,7 +434,8 @@ def cap_comment(text, limit=INLINE_LIMIT):
 def plan_flags(plan_text):
     """Which dangerous command shapes a validation plan matches, in a stable order."""
     raw = plan_text if isinstance(plan_text, str) else ""
-    return [name for name, pattern in PLAN_SHAPES if pattern.search(raw)]
+    return [name for name, pattern in PLAN_SHAPES
+            if (pattern.search(raw) if pattern else _fetches(raw))]
 
 
 def render_validation_plan(plan_text, limit=PLAN_LIMIT):
@@ -986,11 +1019,11 @@ def _lead_block(report, index, lead):
                                                                 lead.introduced)),
            "- **Boundary:** %s" % _boundary_story(lead),
            "- **Claimed root cause:** %s"
-           % sanitize_for_github(lead.claimed_root_cause, limit=400)]
+           % sanitize_for_github(lead.claimed_root_cause, limit=ROOT_CAUSE_LIMIT)]
     if lead.blockers:
         out.append("- **Unresolved:**")
         for blocker in lead.blockers[:6]:
-            out.append("  - %s" % sanitize_for_github(blocker, limit=300))
+            out.append("  - %s" % sanitize_for_github(blocker, limit=BLOCKER_LIMIT))
     out.append("- **Reference:** %s" % reference_markup(report.reference(lead)))
     out.append("")
     plan = render_validation_plan(lead.plan_local)
@@ -999,7 +1032,7 @@ def _lead_block(report, index, lead):
         out.append("")
     if lead.plan_deployment:
         out.append("Owner check (model-written, unverified): %s"
-                   % sanitize_for_github(lead.plan_deployment, limit=400))
+                   % sanitize_for_github(lead.plan_deployment, limit=OWNER_CHECK_LIMIT))
         out.append("")
     return out
 
@@ -1151,8 +1184,9 @@ def _deviations_section(report):
         out.append("None recorded for this run.")
     else:
         for item in report.deviations[:MAX_LIST_ITEMS]:
-            text = item if isinstance(item, str) else (
-                "%s - %s" % (item.get("ref", ""), item.get("reason", "")))
+            # Orchestrator.deviate writes {"deviation", "reason"}.
+            text = item if isinstance(item, str) else " - ".join(
+                part for part in (item.get("deviation"), item.get("reason")) if part)
             out.append("- %s" % sanitize_for_github(text, limit=400))
     out.append("")
     out.append("</details>")
@@ -1326,7 +1360,7 @@ def _lead_body(repository, head_sha, reference, lead):
            "Order\\*: %s. No code was executed, so this is a lead, not a confirmed "
            "vulnerability, and it has no severity." % lead.priority,
            "",
-           "%s" % sanitize_for_github(lead.claimed_root_cause, limit=400),
+           "%s" % sanitize_for_github(lead.claimed_root_cause, limit=ROOT_CAUSE_LIMIT),
            ""]
     if lead.trace:
         out.append("Trace:")
@@ -1339,13 +1373,14 @@ def _lead_body(repository, head_sha, reference, lead):
             else:
                 target = label
             out.append("1. %s - %s (%s)"
-                       % (target, sanitize_for_github(entry.get("description") or "", 200),
+                       % (target, sanitize_for_github(entry.get("description") or "",
+                                                      TRACE_STEP_LIMIT),
                           sanitize_for_github(entry.get("kind") or "", 20)))
         out.append("")
     if lead.blockers:
         out.append("Unresolved:")
         for blocker in lead.blockers[:6]:
-            out.append("- %s" % sanitize_for_github(blocker, limit=300))
+            out.append("- %s" % sanitize_for_github(blocker, limit=BLOCKER_LIMIT))
         out.append("")
     plan = render_validation_plan(lead.plan_local)
     if plan:
@@ -1353,7 +1388,7 @@ def _lead_body(repository, head_sha, reference, lead):
         out.append("")
     if lead.plan_deployment:
         out.append("Owner check (model-written, unverified): %s"
-                   % sanitize_for_github(lead.plan_deployment, limit=400))
+                   % sanitize_for_github(lead.plan_deployment, limit=OWNER_CHECK_LIMIT))
         out.append("")
     out.append(ORDER_FOOTNOTE)
     out.append("")
