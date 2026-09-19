@@ -139,14 +139,15 @@ class RunConfig:
         return "pr%d-%s" % (self.pr_number, self.head_sha[:12])
 
 
+# Every role on DeepSeek-V4.1-Flash, whose API id is `deepseek-flash` (the API accepts
+# only `deepseek-flash` and `deepseek-v4-pro`; a `deepseek/` prefix is LiteLLM routing
+# syntax, not part of the id). In the M1 spike flash hunters cost about a fifth of a
+# v4-pro verifier per conversation.
 DEFAULT_MODELS = {
     "recon": "deepseek-flash",
     "hunter": "deepseek-flash",
     "critic": "deepseek-flash",
-    # A different model verifies than hunts, so a hunter's blind spot is not the
-    # verifier's blind spot too (VALIDATION-AND-REPORTING.md:5 independence, plus
-    # Cloudflare's model-diversity finding).
-    "verifier": "deepseek-v4-pro",
+    "verifier": "deepseek-flash",
 }
 
 
@@ -174,11 +175,16 @@ def _parse_models(raw):
         if not MODEL_RE.match(model):
             raise ConfigError("malformed model name for %s: %r" % (role, model))
         models[role] = model
-    if models["verifier"] == models["hunter"]:
-        raise ConfigError(
-            "verifier and hunter must use different models; the verifier exists to "
-            "disprove the hunter and shares its blind spots when they are the same")
+    # A verifier on the hunter's model is allowed. The skill requires a FRESH verifier
+    # that did not hunt the candidate (VALIDATION-AND-REPORTING.md:5), which separate
+    # conversations already guarantee. A different model is a further hedge against a
+    # shared blind spot, borrowed from Cloudflare's harness; the report says when it is
+    # not in use rather than the run refusing to start.
     return models
+
+
+def shares_verifier_model(models):
+    return models.get("verifier") == models.get("hunter")
 
 
 def load(environ=None):

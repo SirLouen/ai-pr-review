@@ -432,8 +432,12 @@ class TestAnalyze(Fixture):
         for role in seen:
             self.assertIn(role, ("recon", "hunter", "critic", "verifier"))
         data = self.metadata(bundle_dir)
-        self.assertEqual(data["models"]["verifier"], "deepseek-v4-pro")
-        self.assertNotEqual(data["models"]["verifier"], data["models"]["hunter"])
+        # Every role defaults to DeepSeek-V4.1-Flash. A verifier sharing the hunter's model
+        # is allowed, and the run says so rather than implying a second model checked it.
+        self.assertEqual(data["models"]["verifier"], "deepseek-flash")
+        self.assertEqual(data["models"]["verifier"], data["models"]["hunter"])
+        self.assertTrue(any("hunters' model" in note for note in data["notes"]),
+                        "a shared verifier model must be disclosed")
 
     def test_every_conversation_that_failed_is_named_in_the_run_metadata(self):
         _code, bundle_dir = self.run_analyze()

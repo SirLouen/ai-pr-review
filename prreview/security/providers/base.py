@@ -41,8 +41,9 @@ class Usage:
     def __init__(self, cache_miss=0, cache_hit=0, output=0, reasoning=0):
         self.cache_miss = cache_miss
         self.cache_hit = cache_hit
-        # DeepSeek bills reasoning tokens as output and requires them to be sent
-        # back on every later turn of a tool loop, so they are counted, not ignored.
+        # `output` is the provider's completion count, which already INCLUDES reasoning:
+        # the M1 spike capped a request at 64 tokens and got completion_tokens=64 with
+        # reasoning_tokens=64. `reasoning` is kept as a breakdown of it, never added to it.
         self.output = output
         self.reasoning = reasoning
 
@@ -90,7 +91,9 @@ class CostMeter:
         price = self.price(model)
         if price is None:
             return 0.0
-        cost = price.usd(usage.cache_miss, usage.cache_hit, usage.output + usage.reasoning)
+        # Output only: reasoning is already inside it. Adding the two overstated the M1
+        # spike's spend by half ($0.71 reported, $0.47 actual) and tripped max-usd early.
+        cost = price.usd(usage.cache_miss, usage.cache_hit, usage.output)
         self.spent += cost
         self.by_role[role] = self.by_role.get(role, 0.0) + cost
         return cost

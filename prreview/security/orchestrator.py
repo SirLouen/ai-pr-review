@@ -23,7 +23,7 @@ import json
 import os
 import time
 
-from . import gitsrc
+from . import config, gitsrc
 from . import ledger as ledgermod
 from . import loop, pack, prompts, routing, seeders, tools
 from .dataframe import DataFramer
@@ -74,6 +74,10 @@ class Orchestrator:
         self.ledger = None
         self.records = []
         self.unvalidated = []
+        if config.shares_verifier_model(cfg.models):
+            self.notes.append("verifiers run on the hunters' model (%s): independence rests "
+                              "on separate conversations only, without a second model "
+                              "to catch a blind spot both share" % cfg.models["verifier"])
 
     # ------------------------------------------------------------------ bookkeeping
 

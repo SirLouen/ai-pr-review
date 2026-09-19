@@ -96,11 +96,16 @@ class Meter(unittest.TestCase):
         with self.assertRaises(BudgetExceeded):
             meter.check("hunter", "deepseek-flash", 5_000_000, 200_000)
 
-    def test_reasoning_tokens_are_billed_as_output(self):
+    def test_reasoning_is_billed_once_as_part_of_output(self):
+        """completion_tokens already includes reasoning; adding them double-bills it.
+
+        This test previously asserted the double count, which is how the bug survived.
+        """
         meter = CostMeter(max_usd=10.0)
         price = config.PRICES["deepseek-flash"]
-        meter.charge("hunter", "deepseek-flash", Usage(output=10_000, reasoning=90_000))
+        meter.charge("hunter", "deepseek-flash", Usage(output=100_000, reasoning=90_000))
         self.assertAlmostEqual(meter.spent, price.usd(0, 0, 100_000), places=6)
+        self.assertNotAlmostEqual(meter.spent, price.usd(0, 0, 190_000), places=6)
 
     def test_unknown_model_is_not_charged_blindly(self):
         meter = CostMeter(max_usd=1.0)

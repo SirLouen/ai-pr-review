@@ -303,7 +303,7 @@ def _summarise(report, role, conversations):
     first = [r for r in ok if r["rounds"] == 1]
     miss = sum(r["usage"]["cache_miss"] for r in rows)
     hit = sum(r["usage"]["cache_hit"] for r in rows)
-    out = sum(r["usage"]["output"] + r["usage"]["reasoning"] for r in rows)
+    out = sum(r["usage"]["output"] for r in rows)       # reasoning is already inside it
     reasoning = sum(r["usage"]["reasoning"] for r in rows)
     seconds = sum(r["seconds"] for r in rows) or 1.0
     first_rate, ok_rate = len(first) / n, len(ok) / n
