@@ -147,26 +147,31 @@ the report says so.
 
 ### Cost and latency
 
-Measured in the M1 spike against the real API (`scripts/m1_spike.py`), per conversation on
-`deepseek-flash`:
+Measured on real pull requests with every role on `deepseek-flash`, priced at DeepSeek's
+peak rates (off-peak, which by the pricing table includes weekends, is about half):
 
-| Role | Cost | Wall clock |
-|---|---|---|
-| Hunter | ≈ $0.012 | ≈ 20 s |
-| Verifier | ≈ $0.013 | ≈ 55–140 s |
+| Pull request | Changed files | Cost | Wall clock |
+|---|---|---|---|
+| gopherium/gophenberg#225 | 9 (1 production, 6 tests) | **$0.23** | **3 min 40 s** |
+| gopherium/AlphOne#132 | 4 | $0.29 | 4 min 30 s |
 
-A small pull request runs about nine conversations (four reconnaissance, two hunters, the
-critic, two verifiers), so expect roughly **$0.10–0.15**. Reconnaissance and the critic were
-not measured separately and are assumed to cost about what a hunter does. With a baseline
-audit available, reconnaissance drops to one call.
+The #132 run predates the turn caps and the capped warm-start pack; #225 measured $0.41
+before those changes, then $0.30, then $0.23. A typical run is seven or eight model
+conversations: three reconnaissance agents, one hunter per coverage unit (test files share
+the diff-wide units rather than getting their own), the coverage critic, and one verifier
+per candidate. Agents within a phase run concurrently; the phases run in order, because the
+skill requires the critic to finish before any verifier starts.
 
-Agents within a phase run concurrently (up to six), and the phases themselves run in order,
-because the skill requires the critic to finish before any verifier starts. A small pull
-request should take a few minutes rather than the fifteen a fully sequential run needed. That
-figure is an estimate until the next spike run measures it.
+Hidden reasoning is a large share of the output. `SA_REASONING=recon=off,critic=off`
+disables it for roles that record facts and coverage rather than verdicts; hunters and
+verifiers keep it. DeepSeek's `low`, `medium` and `high` effort levels were measured to
+have no effect and are refused.
 
 For comparison, the general PR-Agent review above costs $0.02–0.04. The difference is the
-price of the skill's evidence bar: every lead is re-derived from source by a second agent.
+price of the skill's evidence bar: every candidate is traced through source beyond the diff
+and re-derived by an independent verifier. On both pull requests above, that is what reached
+the right answer: the reviewer followed the change to the server-side authorization and the
+documented deletion contract, and rejected a plausible candidate on evidence.
 
 ### Fork pull requests
 

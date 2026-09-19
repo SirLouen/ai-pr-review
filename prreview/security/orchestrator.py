@@ -99,6 +99,8 @@ class Orchestrator:
         self.ledger = None
         self.records = []
         self.unvalidated = []
+        # What later agents were told about the codebase, kept for the bundle.
+        self.architecture = None
         if config.shares_verifier_model(cfg.models):
             self.notes.append("verifiers run on the hunters' model (%s): independence rests "
                               "on separate conversations only, without a second model "

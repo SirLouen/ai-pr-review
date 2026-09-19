@@ -216,12 +216,20 @@ class ReasoningLevels(unittest.TestCase):
             deepseek.reasoning_params("maximum")
 
     def test_config_parses_a_per_role_map(self):
-        self.assertEqual(config.parse_reasoning("recon=off, critic=low"),
-                         {"recon": "off", "critic": "low"})
+        self.assertEqual(config.parse_reasoning("recon=off, critic=off"),
+                         {"recon": "off", "critic": "off"})
         self.assertEqual(config.parse_reasoning(""), {})
-        for bad in ("planner=low", "hunter=extreme", "hunter"):
+        for bad in ("planner=off", "hunter=extreme", "hunter"):
             with self.assertRaises(config.ConfigError):
                 config.parse_reasoning(bad)
+
+    def test_effort_levels_are_refused_because_they_do_nothing(self):
+        """gophenberg#225 ran with recon=low and recon reasoned no less than by default."""
+        for level in ("low", "medium", "high"):
+            with self.assertRaises(config.ConfigError) as caught:
+                config.parse_reasoning("recon=" + level)
+            self.assertIn("no effect", str(caught.exception))
+            self.assertIn("recon=off", str(caught.exception))
 
 
 class BareWildcards(unittest.TestCase):

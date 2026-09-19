@@ -141,9 +141,8 @@ class RunConfig:
     vendor_dir: str
     models: dict = field(default_factory=lambda: dict(DEFAULT_MODELS))
     caps: Caps = field(default_factory=Caps)
-    # Per-role reasoning level: off | low | medium | high. Empty means send nothing and use
-    # the provider's default. Hidden reasoning was about a third of the cost of
-    # gophenberg#225; the M1 spike's reasoning probe is what should set these.
+    # Per-role reasoning: `off` disables it for that role; a role left out uses the
+    # provider's default. See REASONING_LEVELS for why `off` is the only setting.
     reasoning: dict = field(default_factory=dict)
     recon_mode: str = "baseline-delta"      # baseline-delta | per-run
     disclosure: str = "auto"                # auto | all | summary-only
@@ -200,7 +199,12 @@ def _parse_models(raw):
     return models
 
 
-REASONING_LEVELS = ("off", "low", "medium", "high")
+# `off` only. DeepSeek accepts reasoning_effort values but they do nothing measurable: the
+# M1 spike probe found no ordered effect (low 584, medium 541, high 490 reasoning tokens),
+# and on gophenberg#225 recon at `low` reasoned 315 tokens a turn against 279 by default.
+# A setting that silently does nothing is worse than none, so they are refused.
+REASONING_LEVELS = ("off",)
+IGNORED_LEVELS = ("low", "medium", "high")
 
 
 def parse_reasoning(raw):
@@ -215,9 +219,13 @@ def parse_reasoning(raw):
         if role not in ROLES:
             raise ConfigError("unknown reasoning role %r (expected one of %s)"
                               % (role, ", ".join(ROLES)))
+        if level in IGNORED_LEVELS:
+            raise ConfigError("reasoning level %r for %s has no effect on DeepSeek (measured: "
+                              "reasoning tokens unchanged); use %s=off to disable reasoning, "
+                              "or leave the role out for the default" % (level, role, role))
         if level not in REASONING_LEVELS:
-            raise ConfigError("reasoning level for %s must be one of %s, got %r"
-                              % (role, ", ".join(REASONING_LEVELS), level))
+            raise ConfigError("reasoning level for %s must be %s, got %r"
+                              % (role, " or ".join(REASONING_LEVELS), level))
         levels[role] = level
     return levels
 

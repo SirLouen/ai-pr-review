@@ -422,6 +422,14 @@ class TestAnalyze(Fixture):
         # These printed as "7 of ?" and "of $0.00 ceiling" while the usage keys drifted.
         self.assertNotIn("of ?", summary)
         self.assertNotIn("of $0.00 ceiling", summary)
+        # Recon's facts reach the later agents, and the bundle shows what they were told.
+        with open(os.path.join(bundle_dir, "architecture.md"), encoding="utf-8") as fh:
+            architecture = fh.read()
+        self.assertIn("anonymous HTTP client", architecture)
+        self.assertIn("Origin: recon", architecture)
+        bundle = publishmod.load_bundle(bundle_dir)
+        self.assertEqual(publishmod.verify_integrity(bundle), [],
+                         "architecture.md is digested like every other bundle file")
 
     def test_every_bundle_carries_a_summary_that_frames_the_run(self):
         _code, bundle_dir = self.run_analyze()

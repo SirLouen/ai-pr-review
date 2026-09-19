@@ -745,6 +745,7 @@ def drive(cfg, creds, services, writer, recon_agents=None):
                             "selection rests on the parent's routing alone")
     # Recon's facts become the architecture summary every later agent receives.
     architecture = parent.architecture_from(recon_results, baseline=architecture)
+    parent.architecture = architecture
 
     taken = set()
     launched = launched_assignments(parent)
@@ -799,6 +800,26 @@ def finalize(cfg, parent, source, records, node="node", exempt=()):
     return gate, units
 
 
+def architecture_markdown(architecture):
+    """What the hunters, critic and verifiers were told about the codebase.
+
+    Kept in the bundle so a run can be audited: without it there was no way to confirm
+    that recon's facts reached the later agents at all. It is model-written, so it is
+    stored as data for a reader, never posted, and never fed back as an instruction.
+    """
+    lines = ["# Architecture summary given to this run's agents", "",
+             "Origin: %s. This is a prior agent's summary of the repository, not a finding."
+             % architecture.origin, ""]
+    if architecture.text:
+        lines += ["## Summary", "", architecture.text, ""]
+    if architecture.facts:
+        lines += ["## Reconnaissance facts", "", "```json",
+                  json.dumps(architecture.facts, indent=1, sort_keys=True), "```", ""]
+    if architecture.corrections:
+        lines += ["## Corrections", ""] + ["- %s" % c for c in architecture.corrections] + [""]
+    return "\n".join(lines)
+
+
 def render_bundle(cfg, writer, parent, diff, gate, units, facts_pr, sarif_enabled=False):
     """P6: model-free render of everything the publish job is allowed to see."""
     prior = getattr(writer, "prior", None) or Prior()
@@ -824,6 +845,8 @@ def render_bundle(cfg, writer, parent, diff, gate, units, facts_pr, sarif_enable
         baseline=prior.baseline_label(),
         profile=writer.profile, run_id=cfg.run_id)
     writer.add("findings.json", gate.findings)
+    if getattr(parent, "architecture", None) is not None:
+        writer.add("architecture.md", architecture_markdown(parent.architecture))
     writer.add("coverage-ledger.json", units)
     writer.add("summary.md", render.summary_markdown(report))
     writer.add("inline.json", render.inline_comments(report, diff=report.diff))
