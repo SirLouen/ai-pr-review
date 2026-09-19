@@ -563,7 +563,8 @@ class TestCandidateNaming(PlannedFixture):
         self.assertEqual(parts["symbol"], "getUser")
         self.assertEqual(parts["class_ref"], unit.ordinary_attack_class_block)
 
-    def test_two_hunters_reaching_one_sink_do_not_collapse_into_one_lead(self):
+    def test_naming_gives_two_hunters_on_one_sink_distinct_fingerprints(self):
+        # Naming alone never merges; close_wave consolidates same-sink candidates after.
         parent = self.planned()
         assignment = cli.launched_assignments(parent)[0]
         units = [parent.ledger.get(cid) for cid in assignment.coverage_ids]
@@ -572,6 +573,60 @@ class TestCandidateNaming(PlannedFixture):
         second, _ = cli.name_candidates(hunter_records(), units, self.source, taken)
         self.assertNotEqual(first[0][0]["fingerprint"], second[0][0]["fingerprint"])
         self.assertEqual(fp.parse(second[0][0]["fingerprint"])["variant"], 2)
+
+    def wave(self, parent, records_per_hunter):
+        launched = cli.launched_assignments(parent)
+        hunted = [(assignment, FakeResult({
+                      "records": records,
+                      "units": [unit_payload(assignment, cid)
+                                for cid in assignment.coverage_ids]}))
+                  for assignment, records in zip(launched, records_per_hunter)]
+        notes = []
+        candidates = cli.close_wave(parent, hunted, self.source, set(), notes)
+        return launched, candidates, notes
+
+    def test_two_hunters_reporting_one_sink_send_one_candidate_to_validation(self):
+        """HUNTING.md:219. gpx-route-map#21 posted, and verified, one bug twice."""
+        parent = self.planned()
+        longer = hunter_records()
+        longer[0]["trace"].insert(1, {"kind": "propagation", "file": "src/users.js",
+                                      "line": 1, "scope": "getUser",
+                                      "description": "passed through unchanged"})
+        launched, candidates, notes = self.wave(parent, [hunter_records(), longer])
+        self.assertEqual(len(launched), 2)
+        self.assertEqual(len(candidates), 1)
+        kept = candidates[0]["fingerprint"]
+        # The longer trace wins, and here that is the second hunter's.
+        self.assertEqual(fp.parse(kept)["class_ref"], "ATTACK-CLASSES.md#Injection")
+        self.assertEqual(len(candidates[0]["trace"]), 3)
+        units = []
+        for assignment in launched:
+            for coverage_id in assignment.coverage_ids:
+                unit = parent.ledger.get(coverage_id)
+                self.assertEqual(unit.status, "candidate")
+                self.assertEqual(list(unit.result_fingerprints), [kept])
+                units.append(unit.to_json())
+        self.assertEqual(parent.ledger.validate(), [])
+        # The unit whose candidate was merged still owes a lead, and the kept record
+        # pays it: the parity gate sees nothing missing on either side.
+        self.assertEqual(validatemod.check_fingerprint_parity([{"fingerprint": kept}],
+                                                              units), [])
+        self.assertTrue(any("consolidated into %s" % kept in note for note in notes))
+
+    def test_candidates_at_different_sinks_are_all_validated(self):
+        parent = self.planned()
+        elsewhere = hunter_records()
+        for step in elsewhere[0]["trace"]:
+            if step["kind"] == "sink":
+                step["line"] = 1
+        _launched, candidates, notes = self.wave(parent, [hunter_records(), elsewhere])
+        self.assertEqual(len(candidates), 2)
+        self.assertFalse(any("consolidated" in note for note in notes))
+
+    def test_a_class_specific_candidate_outranks_a_longer_wildcard_one(self):
+        wildcard = {"fingerprint": "sa1:wildcard:a.php@f", "trace": [{}] * 5}
+        specific = {"fingerprint": "sa1:injection:a.php@f", "trace": [{}] * 2}
+        self.assertGreater(cli._strength(specific), cli._strength(wildcard))
 
     def test_a_candidate_with_no_usable_sink_is_reported_not_silently_dropped(self):
         parent = self.planned()

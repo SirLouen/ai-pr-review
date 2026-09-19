@@ -40,6 +40,9 @@ EXIT_OK = 0
 EXIT_INCOMPLETE = 1
 EXIT_USAGE = 2
 
+# The catch-all attack class the ledger adds for diff paths no specific class claims.
+WILDCARD_BLOCK = routing.block_id(routing.ATTACK, "Wildcard")
+
 REASON_CRASHED = "analyze_crashed_before_the_report"
 REASON_SEEDING = "no_changed_path_can_be_represented"
 REASON_NO_HUNT = "hunter_wave_produced_no_result"
@@ -411,8 +414,8 @@ def name_candidates(records, units, source, taken):
 
     A candidate that chose its own fingerprint would be choosing its own identity across
     runs, so the class comes from the unit it was hunted under and the sink from its own
-    trace. `taken` carries variants across hunters: two hunters reaching the same sink
-    must not collapse into one lead.
+    trace. `taken` carries variants across hunters, so every candidate gets a distinct
+    name here; `consolidate` then merges the ones that name the same sink.
     """
     named, skipped = [], []
     for record in records:
@@ -444,9 +447,46 @@ def _unit_for_path(units, path):
     return units[0] if units else None
 
 
+def _strength(record):
+    """Which of two candidates for one sink to keep: HUNTING.md:219 keeps "the strongest
+    complete trace". A class-specific unit outranks the wildcard catch-all, then the
+    longer trace wins; the order the hunters returned in breaks a tie."""
+    try:
+        wildcard = fp.parse(record["fingerprint"])["class_ref"] == WILDCARD_BLOCK
+    except fp.FingerprintError:
+        wildcard = True
+    return (not wildcard, len(record.get("trace") or []))
+
+
+def consolidate(named):
+    """Merge candidates that name the same sink, before any of them is validated.
+
+    HUNTING.md:219: "Consolidate candidate entries by fingerprint and then by root cause
+    ... do not send duplicate candidates to validation." The parent cannot judge a root
+    cause, so it merges only what is structurally one: the same file and line as the
+    sink. Two hunters under different classes reached one line on gpx-route-map#21 and
+    the pull request got two comments, and paid two verifiers, for one bug.
+
+    Returns the kept (record, unit) pairs in order and {dropped: kept} fingerprints.
+    """
+    best, order = {}, []
+    for record, unit in named:
+        key = sink_of(record)
+        if key not in best:
+            order.append(key)
+            best[key] = (record, unit)
+        elif _strength(record) > _strength(best[key][0]):
+            best[key] = (record, unit)
+    kept = [best[key] for key in order]
+    winner = {sink_of(record): record["fingerprint"] for record, _unit in kept}
+    merged = {record["fingerprint"]: winner[sink_of(record)] for record, _unit in named
+              if record["fingerprint"] != winner[sink_of(record)]}
+    return kept, merged
+
+
 def close_wave(parent, hunted, source, taken, notes):
     """Turn each hunter's submission into ledger state and fingerprinted candidates."""
-    candidates = []
+    per_hunter, everything = [], []
     for assignment, result in hunted:
         payload = result.result or {}
         units = [parent.ledger.get(cid) for cid in assignment.coverage_ids]
@@ -455,13 +495,23 @@ def close_wave(parent, hunted, source, taken, notes):
             notes.append("%s proposed %d candidate(s) with no usable sink; a lead with no "
                          "sink cannot be fingerprinted and is not reported"
                          % (assignment.agent_id, len(skipped)))
+        per_hunter.append((assignment, payload, named))
+        everything.extend(named)
+    kept, merged = consolidate(everything)
+    for dropped, into in sorted(merged.items()):
+        notes.append("candidate %s was consolidated into %s: both name the same sink "
+                     "(HUNTING.md:219)" % (dropped, into))
+    for assignment, payload, named in per_hunter:
+        # A unit whose candidate was merged still owes a lead; it points at the kept one,
+        # which is the record the verifier will judge.
         by_unit = {}
         for record, unit in named:
-            by_unit.setdefault(unit.coverage_id, []).append(record["fingerprint"])
-            candidates.append(record)
+            value = merged.get(record["fingerprint"], record["fingerprint"])
+            if value not in by_unit.setdefault(unit.coverage_id, []):
+                by_unit[unit.coverage_id].append(value)
         _close_units(parent, assignment, payload.get("units") or [], by_unit, notes)
     ledgermod.defer_untouched(parent.ledger, ledgermod.REASON_RESERVES)
-    return candidates
+    return [record for record, _unit in kept]
 
 
 def _close_units(parent, assignment, submitted, by_unit, notes):
