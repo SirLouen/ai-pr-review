@@ -238,11 +238,18 @@ class TestArgumentChecking(Fixture):
         self.assertIn("unknown field `follow_symlinks`", result.text)
         self.assertTrue(session.dispatch(call("read_file", path="app.ts", ref="head")).ok)
 
-    def test_missing_field_is_refused(self):
+    def test_a_missing_optional_field_means_null(self):
+        """Absent and null both mean "does not apply" (M1 spike, third run)."""
         session = self.session()
         result = session.dispatch(Call("read_file", path="app.ts", ref="head"))
+        self.assertTrue(result.ok, result.text)
+
+    def test_a_missing_required_field_is_still_refused(self):
+        """Only nullable fields may be left out; `path` is not one of them."""
+        session = self.session()
+        result = session.dispatch(Call("read_file", ref="head"))
         self.assertFalse(result.ok)
-        self.assertIn("missing required field `start_line`", result.text)
+        self.assertIn("missing required field `path`", result.text)
 
     def test_wrong_type_and_forbidden_null_are_refused(self):
         session = self.session()

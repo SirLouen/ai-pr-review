@@ -298,6 +298,23 @@ _UNIT = _object({
                          "Non-empty when the status is blocked or deferred."),
 }, "One coverage unit's outcome.")
 
+def _facts(items, description):
+    """A recon fact list. Optional: finding nothing of a kind is itself an answer, and the
+    prompt says returning nothing is valid, so an absent list reads as an empty one."""
+    return _array(items, description, nullable=True)
+
+
+def _fact(fields):
+    """One recon fact: its own fields, plus the source location that grounds it."""
+    properties = {name: _string(description) for name, description in fields.items()}
+    properties["path"] = _string("Repository-relative path where this is visible.")
+    properties["line"] = _integer("Line number in that file.", nullable=True)
+    return _object(properties, "One fact, grounded in source.")
+
+
+RECON_FACT_KEYS = ("principals", "boundaries", "entry_surfaces", "starting_paths",
+                   "companion_selections", "excluded_blocks", "corrections", "unresolved")
+
 SUBMIT_SCHEMAS = {
     "submit_verdict": _object({
         "decision": _string("Must equal record.verdict.",
@@ -312,12 +329,31 @@ SUBMIT_SCHEMAS = {
         "units": _array(_UNIT, "Every coverage unit you were assigned, exactly once."),
     }, "Return your hunt result. Call this exactly once."),
 
+    # The typed facts RECON_CONTRACT asks for. The parent renders them into the
+    # architecture summary hunters receive; before this schema matched that prompt, a
+    # model following the prompt was refused for seven unknown fields on every round.
     "submit_recon": _object({
-        "units": _array(_UNIT, "The coverage units you propose."),
-        "boundaries": _array(_string("One boundary you found in source, as `path#symbol`."),
-                             "Trust boundaries you located."),
-        "notes": _array(_string("One coverage consequence."),
-                        "Coverage consequences only, no free prose."),
+        "principals": _facts(_fact({"name": "Who acts.", "authority": "What it may do."}),
+                             "Principals and the authority each holds."),
+        "boundaries": _facts(_fact({"name": "The boundary.",
+                                    "control": "The control that enforces it."}),
+                             "Trust boundaries and their controls."),
+        "entry_surfaces": _facts(_fact({"surface": "Where input enters.",
+                                        "kind": "What kind of input."}),
+                                 "Entry surfaces an attacker can reach."),
+        "starting_paths": _facts(_string("A repository-relative path."),
+                                 "Where a hunter should start."),
+        "companion_selections": _facts(_fact({"block": "<FILE>.md#<class name>",
+                                              "boundary": "The boundary found in source."}),
+                                       "Companion blocks and the boundary justifying each."),
+        "excluded_blocks": _facts(_object({"block": _string("<FILE>.md#<class name>"),
+                                           "reason": _string("Why it does not apply.")},
+                                          "One excluded block."),
+                                  "Blocks considered and not selected."),
+        "corrections": _facts(_string("One correction to the baseline, with path:line."),
+                              "Corrections to the baseline summary."),
+        "unresolved": _facts(_string("A fact source cannot establish."),
+                             "What source could not settle."),
     }, "Return your reconnaissance result. Call this exactly once."),
 
     "submit_critique": _object({
@@ -372,6 +408,11 @@ def check_schema(schema, value, where="arguments"):
     return errors
 
 
+def _nullable(schema):
+    types = schema.get("type")
+    return "null" in (types if isinstance(types, list) else [types])
+
+
 def _check(schema, value, where, errors):
     types = schema["type"]
     types = list(types) if isinstance(types, list) else [types]
@@ -388,8 +429,15 @@ def _check(schema, value, where, errors):
                                  ", ".join(sorted(properties)) or "no arguments"))
         for key in sorted(properties):
             if key not in value:
-                errors.append("%s: missing required field `%s`; send null when it does not "
-                              "apply" % (where, key))
+                if _nullable(properties[key]):
+                    # Absent and null both mean "does not apply". Requiring the model to
+                    # spell out `"reason": null` served DeepSeek's strict mode, which this
+                    # action no longer uses; it was then the most common reason a valid
+                    # record was refused (M1 spike, third run: 6 of 17 verifier submits).
+                    # Filling the key in changes no content, so it is not a repair.
+                    value[key] = None
+                    continue
+                errors.append("%s: missing required field `%s`" % (where, key))
             else:
                 _check(properties[key], value[key], "%s.%s" % (where, key), errors)
         return
@@ -874,6 +922,14 @@ def check_cited_readable(record, source, ref="head", index=0):
 
 UNIT_STATUSES = ("covered", "candidate", "blocked", "deferred", "out_of_scope",
                  "not_applicable")
+
+
+def _in_tree(index, path):
+    """A file at head, or a directory some file at head lives under."""
+    if path in index:
+        return True
+    prefix = path.rstrip("/") + "/"
+    return any(name.startswith(prefix) for name in index)
 
 
 def check_unit_patch(units, index_base=0):
@@ -1393,6 +1449,8 @@ class ToolSession:
 
     def _submit(self, args):
         records, units, errors = self._extract(args)
+        if self.role == "recon":
+            errors.extend(self._check_recon_facts(args))
         for index, record in enumerate(records):
             errors.extend(self.gate_record(record, index))
         if units:
@@ -1411,12 +1469,42 @@ class ToolSession:
                    "records": records, "units": units,
                    "blocker_kinds": [blocker_kinds(record) for record in records],
                    "same_root_cause_as": args.get("same_root_cause_as")}
+        if self.role == "recon":
+            payload["facts"] = {key: list(args.get(key) or []) for key in RECON_FACT_KEYS}
         self.finished = True
         self.result = payload
         outcome = SubmitOutcome("accept", payload=payload, round=self.rounds)
         text = ACCEPTED_NOTICE
         self._charge(text)
         return ToolResult(text, terminal=True, outcome=outcome, tool=self.submit_tool)
+
+    def _check_recon_facts(self, args):
+        """Every fact names a location that exists at head.
+
+        Recon reads widely, so this is an existence check, not a read-coverage one. Its
+        facts become the architecture summary in every hunter's prompt, and a location
+        that does not exist there would send each hunter to look for something invented.
+        """
+        errors = []
+        head = self.source.index_for("head")
+        for key in RECON_FACT_KEYS:
+            for position, item in enumerate(args.get(key) or []):
+                where = "arguments.%s[%d]" % (key, position)
+                if isinstance(item, str):
+                    if key == "starting_paths" and not _in_tree(head, item):
+                        errors.append("%s: %s does not exist at head"
+                                      % (where, safe_path(item)))
+                    continue
+                if not isinstance(item, dict) or "path" not in item:
+                    continue
+                count = self.source.line_count(item["path"], "head")
+                if count is None:
+                    errors.append("%s.path: %s is not a readable file at head"
+                                  % (where, safe_path(item["path"])))
+                elif item.get("line") is not None and not 1 <= item["line"] <= count:
+                    errors.append("%s.line: %s has %d lines, not %s"
+                                  % (where, safe_path(item["path"]), count, item["line"]))
+        return errors
 
     def _extract(self, args):
         """Split a submit payload into findings-shaped records and ledger units.

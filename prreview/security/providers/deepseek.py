@@ -125,7 +125,10 @@ def _to_response(data, model):
         name = function.get("name", "")
         raw_args = function.get("arguments") or "{}"
         try:
-            arguments = json.loads(raw_args)
+            # strict=False admits a literal newline or tab inside a string, which models
+            # write in long free-text fields (M1 spike, third run). The value is the same
+            # string the escaped form would give; anything else malformed still fails.
+            arguments = json.loads(raw_args, strict=False)
             error = "" if isinstance(arguments, dict) else "arguments were not a JSON object"
         except ValueError as exc:
             arguments, error = None, "arguments were not valid JSON (%s)" % exc.msg

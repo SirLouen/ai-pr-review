@@ -157,7 +157,18 @@ class ScriptedModel:
 
     def _submit(self, role, blob):
         if role == "recon":
-            payload = {"units": [], "boundaries": ["src/users.js#getUser"], "notes": []}
+            # The typed facts the recon prompt asks for. The old fake sent the tool's
+            # former three-field shape, which is how the prompt and tool disagreeing on
+            # recon's output went unnoticed.
+            payload = {"principals": [{"name": "anonymous HTTP client",
+                                       "authority": "calls getUser",
+                                       "path": "src/users.js", "line": 1}],
+                       "boundaries": [{"name": "request to database",
+                                       "control": "query parameterisation",
+                                       "path": "src/users.js", "line": 2}],
+                       "entry_surfaces": [{"surface": "req.query.id", "kind": "HTTP query",
+                                           "path": "src/users.js", "line": 1}],
+                       "starting_paths": ["src/users.js"]}
         elif role == "critic":
             payload = {"units": [], "gaps": [], "clean": True}
         elif role == "hunter":

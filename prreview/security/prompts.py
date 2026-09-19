@@ -209,8 +209,8 @@ checks (verbatim below)."""
 VERIFIER_CONTRACT = """Return through %s exactly once:
 {"decision": "needs_validation" | "rejected",
  "record": { the matching report-schema.json branch, verbatim field names },
- "blocker_kinds": ["execution" | "deployment" | "context"],
  "same_root_cause_as": <one fingerprint from the offer list below, or null>}
+Leave out any field that does not apply to your record rather than inventing a value.
 `confirmed` is not an available decision in this run (see the execution policy above). You did
 not write this candidate and you are not defending it: try to refute it from repository source,
 re-read every location it cites, and reject it when source disproves it. Keep the assigned

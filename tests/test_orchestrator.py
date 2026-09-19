@@ -295,3 +295,78 @@ class PackCountsAsRead(EndToEnd):
         conversation = self.verify_with([("src/users.js", 1), ("README.md", 1)])
         self.assertNotEqual(conversation.state["submit_rounds"], 1,
                             "README.md was not in the pack, so citing it unread must fail")
+
+
+class ReconFeedsHunters(EndToEnd):
+    """Recon's facts become the architecture summary; before, they were thrown away."""
+
+    def recon_result(self, facts):
+        return type("R", (), {"result": {"facts": facts}, "ok": True})()
+
+    def test_recon_facts_become_the_architecture(self):
+        parent, _, _ = self.build()
+        facts = {"principals": [{"name": "anonymous client", "authority": "calls getUser",
+                                 "path": "src/users.js", "line": 1}],
+                 "corrections": ["query built at src/users.js:2"]}
+        architecture = parent.architecture_from([self.recon_result(facts)])
+        self.assertEqual(architecture.origin, "recon")
+        self.assertEqual(architecture.facts["principals"][0]["name"], "anonymous client")
+        self.assertEqual(architecture.corrections, ("query built at src/users.js:2",))
+
+    def test_facts_reach_the_hunters_prompt(self):
+        from prreview.security import prompts
+        parent, _, _ = self.build()
+        architecture = parent.architecture_from([self.recon_result(
+            {"boundaries": [{"name": "request to database", "control": "parameterisation",
+                             "path": "src/users.js", "line": 2}]})])
+        facts = prompts.RunFacts.from_config(parent.cfg, skill_commit=self.skill.commit,
+                                             commit_count=len(self.commits))
+        unit = {"coverage_id": "u", "starting_paths": ["src/users.js"],
+                "ordinary_blocks": ["ATTACK-CLASSES.md#Injection"]}
+        prompt = prompts.hunter_prompt(facts, parent.framer, "hunter-1", [unit],
+                                       architecture=architecture, pack=self.skill)
+        self.assertIn("parameterisation", prompt.user)
+
+    def test_no_recon_facts_and_no_baseline_means_no_architecture(self):
+        parent, _, _ = self.build()
+        self.assertIsNone(parent.architecture_from([self.recon_result({})]))
+
+    def test_with_a_baseline_recon_only_adds_corrections(self):
+        from prreview.security import prompts
+        parent, _, _ = self.build()
+        baseline = prompts.Architecture(text="baseline summary", origin="baseline")
+        merged = parent.architecture_from([self.recon_result(
+            {"corrections": ["getUser moved"]})], baseline=baseline)
+        self.assertEqual((merged.text, merged.origin), ("baseline summary", "baseline"))
+        self.assertEqual(merged.corrections, ("getUser moved",))
+
+
+class ReconFactsMustExist(EndToEnd):
+    def submit(self, facts):
+        from prreview.security.dataframe import DataFramer
+        session = tools.ToolSession(tools.RepoSource(self.repo, self.head, self.base,
+                                                     commits=self.commits),
+                                    framer=DataFramer(), role="recon", agent_id="recon-1",
+                                    validator=self.validator)
+        return session.dispatch(ToolCall("s", "submit_recon", facts))
+
+    def test_a_real_location_is_accepted(self):
+        out = self.submit({"principals": [{"name": "client", "authority": "reads",
+                                           "path": "src/users.js", "line": 2}]})
+        self.assertEqual(out.outcome.action, "accept", out.outcome.errors)
+        self.assertEqual(out.outcome.payload["facts"]["principals"][0]["line"], 2)
+
+    def test_an_invented_location_is_refused(self):
+        """Recon's facts go into every hunter's prompt; an invented path misleads them all."""
+        out = self.submit({"boundaries": [{"name": "b", "control": "c",
+                                           "path": "src/auth/middleware.js", "line": 9}],
+                           "starting_paths": ["src/nowhere"]})
+        self.assertNotEqual(out.outcome.action, "accept")
+        text = " ".join(out.outcome.errors)
+        self.assertIn("not a readable file at head", text)
+        self.assertIn("does not exist at head", text)
+
+    def test_a_line_past_the_end_of_the_file_is_refused(self):
+        out = self.submit({"principals": [{"name": "c", "authority": "a",
+                                           "path": "src/users.js", "line": 99}]})
+        self.assertIn("has 3 lines", " ".join(out.outcome.errors))

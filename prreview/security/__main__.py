@@ -724,13 +724,17 @@ def drive(cfg, creds, services, writer, recon_calls=4):
                 prior=prior.unit_status(), recon_calls=recon_calls)
 
     changed_paths = source.changed_paths()
-    if not parent.recon(facts, architecture=architecture, changed_paths=changed_paths):
+    recon_results = parent.recon(facts, architecture=architecture, changed_paths=changed_paths)
+    if not recon_results:
         parent.notes.append("no reconnaissance agent returned a usable result; companion "
                             "selection rests on the parent's routing alone")
+    # Recon's facts become the architecture summary every later agent receives.
+    architecture = parent.architecture_from(recon_results, baseline=architecture)
 
     taken = set()
     launched = launched_assignments(parent)
-    hunted = parent.hunt(facts, launched, secret_facts=secret_facts, drafts=other_drafts)
+    hunted = parent.hunt(facts, launched, architecture=architecture,
+                         secret_facts=secret_facts, drafts=other_drafts)
     note_empty_wave(parent, launched, hunted)
     candidates = close_wave(parent, hunted, source, taken, parent.notes)
 

@@ -19,6 +19,7 @@ Two invariants are enforced here rather than asked for in a prompt: no candidate
 findings.json without an independent verifier (VAL:93), and no record is ever marked
 confirmed, because nothing in this action executes the code under review.
 """
+import dataclasses
 import json
 import os
 import time
@@ -258,6 +259,29 @@ class Orchestrator:
         # The recon agents map different aspects of one repository and read nothing
         # from each other, so they run together (RECONNAISSANCE.md:9-55).
         return [r for r in self.run_agents(jobs) if r.ok]
+
+    def architecture_from(self, results, baseline=None):
+        """The architecture summary hunters receive, built from this run's recon facts.
+
+        HUNTING.md:14 puts architecture.md in part 2 of every hunter prompt; before this,
+        recon's output was discarded and hunters on a first run got none. The facts stay
+        typed and are rendered by the parent, and prompts.py frames them as a prior
+        agent's untrusted summary. With a baseline, recon only adds corrections to it.
+        """
+        merged = {key: [] for key in tools.RECON_FACT_KEYS}
+        for result in results:
+            payload_facts = (result.result or {}).get("facts") or {}
+            for key in tools.RECON_FACT_KEYS:
+                for item in payload_facts.get(key) or []:
+                    if item not in merged[key]:
+                        merged[key].append(item)
+        corrections = tuple(str(c) for c in merged.pop("corrections"))
+        if baseline is not None:
+            return dataclasses.replace(
+                baseline, corrections=tuple(baseline.corrections) + corrections)
+        if not corrections and not any(merged.values()):
+            return None
+        return prompts.Architecture(origin="recon", facts=merged, corrections=corrections)
 
     def hunt(self, facts, assignments, architecture=None, secret_facts=(), drafts=()):
         """P2: exactly one hunter wave (SKILL.md:111)."""
