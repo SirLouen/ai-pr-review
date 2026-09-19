@@ -211,6 +211,10 @@ VERIFIER_CONTRACT = """Return through %s exactly once:
  "record": { the matching report-schema.json branch, verbatim field names },
  "same_root_cause_as": <one fingerprint from the offer list below, or null>}
 Leave out any field that does not apply to your record rather than inventing a value.
+Cite only lines you have actually seen in this conversation: those in the warm-start pack, or
+ones you opened with a tool. Every cited line is checked against what you read, and a record
+citing an unread line is returned to you. Cite the evidence that decides the verdict, not
+background such as a README.
 `confirmed` is not an available decision in this run (see the execution policy above). You did
 not write this candidate and you are not defending it: try to refute it from repository source,
 re-read every location it cites, and reject it when source disproves it. Keep the assigned
