@@ -75,7 +75,12 @@ class Caps:
     #   hunter   14  was 26; the whole-diff Wildcard hunter ran 20 turns, 33% of the run
     #   critic    8  was 20; it ran 17 turns, 25% of the run, and in the quick profile it
     #                may only record gaps as deferred, never a finding (HUNTING.md:249)
-    max_turns = {"recon": 20, "hunter": 14, "critic": 8, "verifier": 25}
+    # Raised again on gpx-route-map#21, where the notice was not enough: a hunter spent
+    # all 14 turns and the critic all 8 without submitting, which deferred a unit and
+    # left the run incomplete. An agent that submits early never reaches its cap, so the
+    # headroom costs nothing on the runs that did not need it; a wasted conversation
+    # costs its whole spend. Highest seen in three runs: recon 19, hunter 14, critic 8.
+    max_turns = {"recon": 22, "hunter": 18, "critic": 12, "verifier": 25}
     # Cost ceilings on the warm-start pack, in tokens. The pack was sized from the context
     # window alone, and on a 1M-token model that meant up to ~125k tokens of source in every
     # hunter's first message: on gophenberg#225 hunters opened at 102k tokens and the
