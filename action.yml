@@ -70,7 +70,10 @@ runs:
         GITHUB__USER_TOKEN: ${{ inputs.github-token }}
         GITHUB__DEPLOYMENT_TYPE: user
         CONFIG__MODEL: deepseek/${{ inputs.model }}
-        CONFIG__FALLBACK_MODELS: "[]"
+        # No CONFIG__FALLBACK_MODELS here: PR-Agent's Dynaconf runs with merge_enabled, so
+        # an empty list from the environment merges into the shipped default instead of
+        # replacing it. verify_review.py passes --config.fallback_models=[] on the command
+        # line, which sets the value outright.
         # Both are required. custom_model_max_tokens alone is silently clamped by
         # config.max_model_tokens (default 32000) in utils.py: max_tokens_model =
         # min(max_model_tokens, max_tokens_model). Without the second line the model
@@ -79,7 +82,12 @@ runs:
         CONFIG__MAX_MODEL_TOKENS: "128000"
         CONFIG__DUPLICATE_EXAMPLES: "false"
         CONFIG__TEMPERATURE: "0"
-        CONFIG__AI_TIMEOUT: "300"
+        # Measured on gpx-route-map#26: one review call takes 200-300 s, so a 300 s
+        # timeout was a coin flip. PR-Agent retries a timed-out call once on the same
+        # model (MODEL_RETRIES = 2), so the worst case here is about 16 minutes of model
+        # time; PR_AGENT_TIMEOUT_SECONDS below bounds the whole run just above that, and
+        # a consumer's `timeout-minutes` should leave room for it (20 is enough).
+        CONFIG__AI_TIMEOUT: "480"
         # Pinned here so a .pr_agent.toml on the default branch cannot enable chunking:
         # each chunk logs its own "AI response:" and the parser reads only the last one,
         # so the other chunks' findings would be lost without any error.
@@ -93,7 +101,7 @@ runs:
         # Linked issue bodies are attacker-controlled text pulled into the prompt
         # (up to 3 issues, 10k chars each) and are not needed to review a diff.
         PR_REVIEWER__REQUIRE_TICKET_ANALYSIS_REVIEW: "false"
-        PR_AGENT_TIMEOUT_SECONDS: "900"
+        PR_AGENT_TIMEOUT_SECONDS: "1020"
       run: |
         if [[ ! "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
           echo "::error::invalid pr-number: $PR_NUMBER"; exit 1

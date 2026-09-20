@@ -135,12 +135,37 @@ def run_pr_agent(pr_url):
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     try:
-        p = subprocess.run([sys.executable, "-m", "pr_agent.cli", "--pr_url", pr_url, "review"],
+        # `--config.<key>=<value>` reaches get_settings().set(), which REPLACES the value.
+        # The env var CONFIG__FALLBACK_MODELS cannot: PR-Agent builds its Dynaconf with
+        # merge_enabled=True, so an empty list merges into the shipped default and leaves
+        # it in place. Without this, a DeepSeek failure is retried against that default
+        # (an OpenAI model this action has no key for) and the only error the log shows is
+        # OpenAI's "Incorrect API key provided: dummy_key", which hides the real cause.
+        p = subprocess.run([sys.executable, "-m", "pr_agent.cli", "--pr_url", pr_url,
+                            "review", "--config.fallback_models=[]"],
                            capture_output=True, text=True, env=env, encoding="utf-8",
                            errors="replace", timeout=PR_AGENT_TIMEOUT)
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     except subprocess.TimeoutExpired as e:      # keep partial output so a timeout is diagnosable
         return None, _as_text(e.stdout) + _as_text(e.stderr)
+
+
+# The reason a run produced nothing is logged by PR-Agent when the call fails, thousands of
+# lines before the end of its output -- it dumps the whole prompt after it. Printing only the
+# tail showed the LAST model's error and buried the first model's, which is the real one.
+MODEL_ERROR_RE = re.compile(
+    r"(?:Failed to generate prediction|Error during LLM inference|Failed to review PR)[^\n]*")
+
+
+def model_errors(out, limit=12):
+    """Every model-failure line anywhere in PR-Agent's output, oldest first, deduplicated."""
+    seen, found = set(), []
+    for match in MODEL_ERROR_RE.finditer(ANSI_RE.sub("", out or "")):
+        line = match.group(0).strip()
+        if line not in seen:
+            seen.add(line)
+            found.append("      " + line)
+    return found[:limit]
 
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -404,6 +429,8 @@ def main():
             log(f"full PR-Agent output written to {dump}")
         except OSError:
             pass
+        for line in model_errors(out):
+            log(line)
         log(out[-4000:])
         return 1
     log(f"      PR-Agent raised {len(findings)} finding(s)")
