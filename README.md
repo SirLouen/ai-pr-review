@@ -154,10 +154,15 @@ peak rates (off-peak, which by the pricing table includes weekends, is about hal
 |---|---|---|---|
 | gopherium/gophenberg#225 | 9 (1 production, 6 tests) | **$0.23** | **3 min 40 s** |
 | gopherium/AlphOne#132 | 4 | $0.29 | 4 min 30 s |
+| SirLouen/gpx-route-map#21 | 1 | $0.28 | 5 min |
 
 The #132 run predates the turn caps and the capped warm-start pack; #225 measured $0.41
-before those changes, then $0.30, then $0.23. A typical run is seven or eight model
-conversations: three reconnaissance agents, one hunter per coverage unit (test files share
+before those changes, then $0.30, then $0.23. #21 is the run this action was first proven
+end to end on in GitHub Actions: a WordPress block plugin whose pull request drops the
+`esc_url()` on a shortcode-supplied URL written into an HTML attribute. The reviewer
+reported it with the trace from the shortcode attribute to the sink, and a verifier
+rejected a second claim on the same value with a source citation. A typical run is eight
+or nine model conversations: three reconnaissance agents, one hunter per coverage unit (test files share
 the diff-wide units rather than getting their own), the coverage critic, and one verifier
 per candidate. Agents within a phase run concurrently; the phases run in order, because the
 skill requires the critic to finish before any verifier starts.
