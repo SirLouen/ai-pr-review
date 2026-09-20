@@ -89,7 +89,7 @@ jobs:
       #       results-receiver.actions.githubusercontent.com:443
       #       # plus the *.blob.core.windows.net endpoints the audit run reports
 
-      - uses: SirLouen/ai-pr-review/security/analyze@<sha>  # the commit you release; cannot be pinned before it exists on GitHub
+      - uses: SirLouen/ai-pr-review/security/analyze@ # v1.2.0
         with:
           pr-number: ${{ github.event.pull_request.number }}
           head-sha: ${{ github.event.pull_request.head.sha }}
@@ -118,7 +118,7 @@ jobs:
       actions: read
       # security-events: write   # only with `sarif: "true"` below
     steps:
-      - uses: SirLouen/ai-pr-review/security/publish@<sha>  # the commit you release; cannot be pinned before it exists on GitHub
+      - uses: SirLouen/ai-pr-review/security/publish@ # v1.2.0
         with:
           pr-number: ${{ github.event.pull_request.number }}
           head-sha: ${{ github.event.pull_request.head.sha }}
