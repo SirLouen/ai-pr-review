@@ -810,16 +810,44 @@ def drive(cfg, creds, services, writer, recon_agents=None):
     candidates = [c for c in candidates if not prior.suppresses(c.get("fingerprint", ""))]
     # A prior needs_validation lead is never carried as-is: it goes back through a fresh
     # verifier like any new candidate (RECONNAISSANCE.md:67, VAL:91).
-    fresh = {c.get("fingerprint") for c in candidates}
-    candidates += [r for r in prior.reverify() if r.get("fingerprint") not in fresh]
+    carried = carry_prior(prior, candidates, parent.notes)
+    candidates += carried
     writer.suppressed = suppressed
 
     parent.critique(facts, candidates, architecture=architecture)
     records = parent.verify(facts, candidates, architecture=architecture)
     records += prior.retained()
+    # A carried lead has no candidate unit of its own: its unit was re-hunted this run
+    # and closed covered, deferred or blocked, and the report discloses that. Without
+    # this the parity gate quarantines the lead and calls the whole run incomplete.
     gate, units = finalize(cfg, parent, source, records, node=services.node,
-                           exempt=prior.exempt())
+                           exempt=list(prior.exempt())
+                           + [r.get("fingerprint", "") for r in carried])
     return parent, diff, gate, units, facts_pr
+
+
+def carry_prior(prior, candidates, notes):
+    """Prior leads this run has not already raised for itself.
+
+    A prior lead is dropped when this run produced its fingerprint again, and when this
+    run already has a candidate at the same sink under another fingerprint: on
+    gpx-route-map#21 the wildcard lead from the previous push was one hunter's view of
+    the lead a class-specific hunter raised here, and carrying it would re-report and
+    re-verify one bug as two (HUNTING.md:219).
+    """
+    fresh = {c.get("fingerprint") for c in candidates}
+    sinks = {sink_of(c) for c in candidates}
+    out = []
+    for record in prior.reverify():
+        fingerprint = record.get("fingerprint", "")
+        if fingerprint in fresh:
+            continue
+        if sink_of(record) in sinks:
+            notes.append("prior lead %s was not carried: this run already has a "
+                         "candidate at that sink (HUNTING.md:219)" % fingerprint)
+            continue
+        out.append(record)
+    return out
 
 
 def note_empty_wave(parent, launched, hunted):

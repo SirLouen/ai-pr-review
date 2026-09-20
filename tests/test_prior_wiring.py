@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from prreview.security import __main__ as cli
 from prreview.security import state
+from prreview.security import validate as validatemod
 
 FP_REJECTED = "sa1:injection:src/users.js@getUser"
 FP_LEAD = "sa1:access-control:src/admin.js@deleteUser"
@@ -79,6 +80,50 @@ class Carry(unittest.TestCase):
                                         changed_paths={"src/admin.js"}))
         self.assertEqual(prior.reverify(), [])
         self.assertEqual(prior.source_state()[FP_LEAD], "changed")
+
+
+class CarryAgainstThisRun(unittest.TestCase):
+    """What `carry_prior` drops before a verifier is paid for it."""
+
+    def prior(self):
+        return cli.Prior(plan=plan_for([record(FP_LEAD, "needs_validation",
+                                               "src/admin.js")]))
+
+    def candidate(self, fingerprint, path, line=3):
+        return {"fingerprint": fingerprint, "verdict": "needs_validation",
+                "trace": [{"kind": "sink", "file": path, "line": line, "scope": "f",
+                           "description": "d"}]}
+
+    def test_a_lead_this_run_raised_again_is_not_carried_twice(self):
+        notes = []
+        carried = cli.carry_prior(self.prior(),
+                                  [self.candidate(FP_LEAD, "src/admin.js")], notes)
+        self.assertEqual(carried, [])
+        self.assertEqual(notes, [], "the same fingerprint is an ordinary re-find")
+
+    def test_a_lead_at_a_sink_this_run_already_covers_is_not_carried(self):
+        """gpx-route-map#21: the wildcard lead was the injection lead seen twice."""
+        notes = []
+        other = self.candidate("sa1:wildcard:src/admin.js@deleteUser", "src/admin.js")
+        carried = cli.carry_prior(self.prior(), [other], notes)
+        self.assertEqual(carried, [])
+        self.assertTrue(any(FP_LEAD in note and "already has a candidate at that sink"
+                            in note for note in notes))
+
+    def test_a_lead_at_a_sink_nobody_reached_is_carried_and_exempt_from_parity(self):
+        notes = []
+        elsewhere = self.candidate("sa1:injection:src/users.js@getUser", "src/users.js")
+        carried = cli.carry_prior(self.prior(), [elsewhere], notes)
+        self.assertEqual([r["fingerprint"] for r in carried], [FP_LEAD])
+        self.assertEqual(notes, [])
+        # Its unit was re-hunted and closed covered or deferred, so no unit claims it.
+        # The gate must not quarantine the lead for that; drive() exempts what it carries.
+        self.assertEqual(
+            validatemod.check_fingerprint_parity([{"fingerprint": FP_LEAD}], [],
+                                                 exempt=[FP_LEAD]), [])
+        self.assertTrue(validatemod.check_fingerprint_parity([{"fingerprint": FP_LEAD}],
+                                                             []),
+                        "the control: without the exemption the gate fails the run")
 
 
 class WriteBack(unittest.TestCase):
