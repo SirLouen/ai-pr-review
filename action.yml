@@ -71,9 +71,8 @@ runs:
         GITHUB__DEPLOYMENT_TYPE: user
         CONFIG__MODEL: deepseek/${{ inputs.model }}
         # No CONFIG__FALLBACK_MODELS here: PR-Agent's Dynaconf runs with merge_enabled, so
-        # an empty list from the environment merges into the shipped default instead of
-        # replacing it. verify_review.py passes --config.fallback_models=[] on the command
-        # line, which sets the value outright.
+        # setting a list appends to the shipped default rather than replacing it -- from the
+        # environment and from the command line alike. pr_agent_launch.py clears it instead.
         # Both are required. custom_model_max_tokens alone is silently clamped by
         # config.max_model_tokens (default 32000) in utils.py: max_tokens_model =
         # min(max_model_tokens, max_tokens_model). Without the second line the model

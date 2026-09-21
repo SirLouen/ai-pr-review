@@ -127,22 +127,32 @@ def _as_text(value):
     return value.decode("utf-8", "replace") if isinstance(value, bytes) else value
 
 
+# Runs pr_agent.cli with no fallback model and with reasoning_effort honoured for DeepSeek;
+# neither is reachable through PR-Agent's configuration. See its docstring for why.
+PR_AGENT_LAUNCHER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pr_agent_launch.py")
+
+# PR-Agent logs this when it attaches the effort to the request. If a PR-Agent upgrade stops
+# honouring the launcher's model list, the line disappears and reasoning is silently back on.
+REASONING_OFF_MARKER = "Adding reasoning_effort with value none"
+
+
 def run_pr_agent(pr_url):
     """Run PR-Agent without publishing. Returns (exit code or None on timeout, log output)."""
     env = os.environ.copy()
     env["CONFIG__PUBLISH_OUTPUT"] = "false"
     env["CONFIG__VERBOSITY_LEVEL"] = "2"        # needed so the model response is logged
+    # "none" reaches DeepSeek as thinking: disabled (the launcher is what lets it be sent). With
+    # reasoning on and no max_tokens, hidden reasoning can spend the whole default output budget
+    # and the review comes back empty with finish_reason "length". 8192 is an explicit budget
+    # for the YAML review itself, sent as max_tokens.
+    env["CONFIG__REASONING_EFFORT"] = "none"
+    env["CONFIG__MAX_OUTPUT_TOKENS"] = "8192"
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     try:
-        # `--config.<key>=<value>` reaches get_settings().set(), which REPLACES the value.
-        # The env var CONFIG__FALLBACK_MODELS cannot: PR-Agent builds its Dynaconf with
-        # merge_enabled=True, so an empty list merges into the shipped default and leaves
-        # it in place. Without this, a DeepSeek failure is retried against that default
-        # (an OpenAI model this action has no key for) and the only error the log shows is
-        # OpenAI's "Incorrect API key provided: dummy_key", which hides the real cause.
-        p = subprocess.run([sys.executable, "-m", "pr_agent.cli", "--pr_url", pr_url,
-                            "review", "--config.fallback_models=[]"],
+        # -P keeps the working directory (the consumer's checkout, if any) off sys.path, so
+        # nothing there can shadow PR-Agent or its dependencies.
+        p = subprocess.run([sys.executable, "-P", PR_AGENT_LAUNCHER, "--pr_url", pr_url, "review"],
                            capture_output=True, text=True, env=env, encoding="utf-8",
                            errors="replace", timeout=PR_AGENT_TIMEOUT)
         return p.returncode, (p.stdout or "") + (p.stderr or "")
@@ -418,6 +428,9 @@ def main():
     log(f"[1/3] running PR-Agent on {owner}/{repo}#{num} ...")
     rc, out = run_pr_agent(a.pr_url)
     raw, findings = extract_findings(out)
+    if REASONING_OFF_MARKER not in ANSI_RE.sub("", out):
+        log("WARNING: PR-Agent did not send reasoning_effort=none; DeepSeek ran with reasoning "
+            "on, which can empty the response (finish_reason: length)")
     if raw is None:
         reason = f"timed out after {PR_AGENT_TIMEOUT}s" if rc is None else f"exit code {rc}"
         log(f"ERROR: no parsable review in PR-Agent output ({reason})")

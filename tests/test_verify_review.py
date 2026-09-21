@@ -8,6 +8,7 @@ only the last 4000 characters of PR-Agent's output -- which, after a failure, is
 PR-Agent dumps, not the error. The real cause (DeepSeek timing out) was thousands of lines
 earlier.
 """
+import importlib.util
 import os
 import sys
 import unittest
@@ -71,17 +72,80 @@ class ModelErrors(unittest.TestCase):
         self.assertLessEqual(len(vr.model_errors(noisy)), 12)
 
 
-class FallbackModels(unittest.TestCase):
-    """The env var cannot do this: PR-Agent's Dynaconf has merge_enabled=True, so `[]`
-    merges into the shipped default. The command line calls get_settings().set(), which
-    replaces it."""
+HAVE_PR_AGENT = importlib.util.find_spec("pr_agent") is not None
 
-    def test_the_command_disables_fallback_models_on_the_command_line(self):
-        self.assertIn('"--config.fallback_models=[]"', read("verify_review.py"))
 
-    def test_the_action_does_not_pretend_to_set_it_from_the_environment(self):
+class Launcher(unittest.TestCase):
+    """What pr_agent_launch.py must do, since PR-Agent's configuration cannot.
+
+    v1.2.1 passed --config.fallback_models=[] instead. It could not work: with merge_enabled,
+    setting a list appends to it, so the fallback survived and Alph-One/alphone-enterprise#77
+    still ended on OpenAI's dummy_key error. These tests run against the installed PR-Agent
+    where it is available, so a change like that fails here rather than in a consumer's run.
+    """
+
+    def test_the_review_runs_through_the_launcher_not_the_bare_cli(self):
+        source = read("verify_review.py")
+        self.assertIn("pr_agent_launch.py", source)
+        self.assertNotIn('"-m", "pr_agent.cli"', source)
+        self.assertNotIn("--config.fallback_models", source, "it appends; it never cleared anything")
+
+    def test_the_review_asks_for_reasoning_off_and_an_explicit_budget(self):
+        source = read("verify_review.py")
+        self.assertIn('env["CONFIG__REASONING_EFFORT"] = "none"', source)
+        self.assertIn('env["CONFIG__MAX_OUTPUT_TOKENS"]', source)
+
+    def test_the_action_does_not_pretend_to_set_the_fallback_from_the_environment(self):
         self.assertNotIn("CONFIG__FALLBACK_MODELS:", read("action.yml"),
                          "a setting that silently does nothing is worse than no setting")
+
+    @unittest.skipUnless(HAVE_PR_AGENT, "PR-Agent is not installed")
+    def test_setting_the_list_appends_which_is_why_a_launcher_is_needed(self):
+        """The control: if PR-Agent ever makes set() replace lists, the launcher is redundant."""
+        from pr_agent.config_loader import get_settings
+        before = list(get_settings().config.fallback_models)
+        get_settings().set("CONFIG.FALLBACK_MODELS", ["x-sentinel"], merge=False)
+        try:
+            self.assertEqual(list(get_settings().config.fallback_models), before + ["x-sentinel"])
+        finally:
+            get_settings().config.fallback_models = before
+
+    @unittest.skipUnless(HAVE_PR_AGENT, "PR-Agent is not installed")
+    def test_a_fallback_the_repository_settings_put_back_is_cleared(self):
+        """A .pr_agent.toml, or the org's pr-agent-settings repo, is applied inside PRAgent,
+        after the launcher starts, and can set [config] fallback_models."""
+        import pr_agent.agent.pr_agent as agent
+        import pr_agent_launch as launcher
+        from pr_agent.config_loader import get_settings
+
+        def repo_file_sets_a_fallback(pr_url):     # what _apply_repo_settings_file does
+            section = dict(get_settings().as_dict()["CONFIG"], fallback_models=["openai/x"])
+            get_settings().set("CONFIG", section, merge=False)
+
+        saved = list(get_settings().config.fallback_models)
+        real = launcher._apply_repo_settings
+        launcher._apply_repo_settings = repo_file_sets_a_fallback
+        try:
+            agent.apply_repo_settings("https://github.com/o/r/pull/1")   # the name PRAgent calls
+            self.assertEqual(list(get_settings().config.fallback_models), [])
+        finally:
+            launcher._apply_repo_settings = real
+            get_settings().config.fallback_models = saved
+
+    @unittest.skipUnless(HAVE_PR_AGENT, "PR-Agent is not installed")
+    def test_the_model_is_listed_so_its_reasoning_effort_is_sent(self):
+        import pr_agent_launch as launcher
+        from pr_agent.algo import SUPPORT_REASONING_EFFORT_MODELS as listed
+        saved = list(listed)
+        try:
+            launcher.allow_reasoning_effort("deepseek/deepseek-flash")
+            launcher.allow_reasoning_effort("deepseek/deepseek-flash")
+            self.assertEqual(listed.count("deepseek/deepseek-flash"), 1)
+            before = len(listed)
+            launcher.allow_reasoning_effort("")        # unset CONFIG__MODEL: leave PR-Agent alone
+            self.assertEqual(len(listed), before)
+        finally:
+            listed[:] = saved
 
 
 class Timeouts(unittest.TestCase):
